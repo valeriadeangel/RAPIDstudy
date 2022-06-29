@@ -20,9 +20,6 @@
 library(dplyr)
 library(readr)
 
-
-list(sub_dir_list)
-
 setwd("E:/")
 
 DESIRED_FEATURE="connect_fitbit_sleep_classic" # change features here
