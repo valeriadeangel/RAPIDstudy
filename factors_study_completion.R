@@ -8,6 +8,8 @@
 #  IV1: Treatment length in weeks
 #  IV2: Treatment intensity (step 2 vs step 3)
 
+# covariates: Depression and anxiety severity
+#             Study length
 
 
 #libraries
