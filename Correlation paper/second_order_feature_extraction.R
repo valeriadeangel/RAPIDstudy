@@ -4,12 +4,47 @@ library(lubridate)
 library(tidyverse)
 library(data.table)
 library(dplyr)
+library(corrplot)
+library(glmnet)
+library(caret)
+library(groupdata2)
+
+options(scipen=999)
+# options(scipen=0) # to revert scientific notation
+
+#load from Home:
+qids <- fread("C:/Users/valer/Downloads/QIDS_summarized.csv", data.table = F) %>%
+  dplyr::mutate(survey_date = lubridate::ymd(survey_date))
+
+sleep <- fread("C:/Users/valer/Downloads/daily_sleep_feature.csv", data.table=F) %>%
+  dplyr::mutate(date_str = lubridate::ymd(date_str))
+
+bt <- fread("C:/Users/valer/Downloads/daily_bt_feature.csv", data.table=F) %>%
+  dplyr::mutate(date_str = lubridate::ymd(date_str))
+
+gps <- fread("C:/Users/valer/Downloads/daily_GPS_feature.csv", data.table=F) %>%
+  dplyr::mutate(date_str = lubridate::ymd(date_str))
+
+
+
+#load from Uni:
+# qids <- fread("Downloads/QIDS_summarized.csv", data.table=F) %>%
+#   dplyr::mutate(survey_date = lubridate::ymd(survey_date))
+# 
+# sleep <- fread("Downloads/daily_sleep_feature.csv", data.table=F) %>%
+#   dplyr::mutate(date_str = lubridate::ymd(date_str))
+# 
+# bt <- fread("Downloads/daily_bt_feature.csv", data.table=F) %>%
+#   dplyr::mutate(date_str = lubridate::ymd(date_str))
+
+# gps <- fread("Downloads/daily_GPS_feature.csv", data.table=F) %>%
+#   dplyr::mutate(date_str = lubridate::ymd(date_str))
 
 # read qids table ----
 # qids <- fread("C:\Users\k1754359\Downloads\QIDS_summarized.csv", data.table = F) %>%
 
-qids <- fread("C:/Users/k1754359/Downloads/QIDS_summarized.csv", data.table=F) %>%
-  dplyr::mutate(survey_date = lubridate::ymd(survey_date))
+# qids <- fread("C:/Users/k1754359/Downloads/QIDS_summarized.csv", data.table=F) %>%
+#   dplyr::mutate(survey_date = lubridate::ymd(survey_date))
 qids$response_time = qids$response_time/60
 qids$complete_time = qids$complete_time/60
 fit <-lmer(q16 ~ response_time + (1 |p_id), qids)
@@ -177,90 +212,6 @@ for (i in 25:62) {
   # print(coef(summary(fit)))
   # print(summary(fit)$coefficients[2,"Pr(>|t|)"])
 }
-
-
-#loop for correlation coeffs
-
-library(corrplot)
-x <- cor(qids_temp[25:30])
-corrplot(x, type="upper", order="hclust")
-
-cor.test(qids_temp[25:28], qids_temp$qids_total) 
-
-for (i in 25:62) {
-  corr <- cor.test(qids_temp$qids_total, qids_temp$qids_temp[[i]])
-  print(x)
-  x<-x+1
-  print(names(qids_temp)[i])
-  print(corr$estimate)
-  print(corr$p.value)
-  # print(coef(summary(fit)))
-  # print(summary(fit)$coefficients[2,"Pr(>|t|)"])
-}
-
-
-#extract correlations and p values
-r <- cor(qids_temp$qids_total, qids_temp[25:28])
-r
-
-p <- sapply(qids_temp[,25:28], FUN=function(x, y) cor.test(x, y)$p.value, y=qids_temp$qids_total)
-p
-
-rbind(r, p)
-
-
-corr <- cor.test(qids_temp$qids_total, qids_temp$sleep_onset_mean)
-corr$p.value
-scatter.smooth(x=qids_temp$sleep_onset_mean, y=qids_temp$qids_total, main="plot")  # scatterplot
-linearMod <- lm(qids_total ~ sleep_onset_mean, data=qids_temp)  # build linear regression model on full data
-print(linearMod)
-summary(linearMod)
-
-
-
-####QIDS
-#SIGNIFICANT:
-#[1] "deep_pct_std"
-#[1] "sleep_onset_mean"
-#[1] "sleep_onset_std"
-# [1] "sleep_offset_mean"
-
-#TREND:
-# [1] "sleep_efficiency_mean"
-# [1] "awake_pct_mean"
-# [1] "bt_max_day_std"
-#[1] "bt_std_day_std"
-#[1] "bt_range_day_std"
-
-
-####QIDS TEMP
-#SIGNIFICANT:
-# deep_pct_std
-#"sleep_onset_mean"
-#"sleep_onset_std"
-# "sleep_offset_mean"
-
-#TREND:
-#[1] "awake_pct_mean" *
-# [1] "sleep_efficiency_mean *
-# [1] "bt_max_day_std"
-#[1] "bt_std_day_std"
-#[1] "bt_range_day_std"
-
-colnames(qids_temp)
-
-18.470/(18.470 + 7.434) # ~ 70% is the variance explained by individual difference
-
-plot(fit)  # looks alright, no patterns evident
-qqnorm(resid(fit))
-qqline(resid(fit))  # points fall nicely onto the line - good!
-
-
-#### Histograms ####
-
-hist(qids_temp$qids_total)
-
-
 
 ###### Lasso regularised regression - model 1 #####
 
@@ -545,12 +496,3 @@ paste("R2 is: ",  1-(MSE_min/var(y))) #0.967796286364433"
 ####
 #There isn't any difference between the model pre and post multilevel regression analyses. 
 ####
-
-
-
-#### Cross-sectional analyses of baseline data ------
-
-
-
-
-
