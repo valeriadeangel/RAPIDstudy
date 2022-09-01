@@ -1,0 +1,103 @@
+###  Descriptives  ###
+
+
+#loop for correlation coeffs
+
+x <- cor(qids[25:35], use = "complete.obs")
+corrplot(x, type="upper", order="hclust")
+
+x <- as.data.frame(qids[25:62])
+cor.test(x, qids$qids_total) 
+
+for (i in 25:62) {
+  corr <- cor.test(qids_temp$qids_total, qids_temp$qids_temp[[i]])
+  print(x)
+  x<-x+1
+  print(names(qids_temp)[i])
+  print(corr$estimate)
+  print(corr$p.value)
+  # print(coef(summary(fit)))
+  # print(summary(fit)$coefficients[2,"Pr(>|t|)"])
+}
+
+
+#extract correlations and p values
+r <- cor(qids_temp$qids_total, qids_temp[25:28])
+r
+
+p <- sapply(qids_temp[,25:28], FUN=function(x, y) cor.test(x, y)$p.value, y=qids_temp$qids_total)
+p
+
+rbind(r, p)
+
+
+corr <- cor.test(qids_temp$qids_total, qids_temp$sleep_onset_mean)
+corr$p.value
+scatter.smooth(x=qids_temp$sleep_onset_mean, y=qids_temp$qids_total, main="plot")  # scatterplot
+linearMod <- lm(qids_total ~ sleep_onset_mean, data=qids_temp)  # build linear regression model on full data
+print(linearMod)
+summary(linearMod)
+
+
+#### corr plot####
+# do not edit
+
+corrplot2 <- function(data,
+                      method = "pearson",
+                      sig.level = 0.05,
+                      order = "original",
+                      diag = FALSE,
+                      type = "upper",
+                      tl.srt = 90,
+                      number.font = 1,
+                      number.cex = 1,
+                      mar = c(0, 0, 0, 0)) {
+  library(corrplot)
+  data_incomplete <- data
+  data <- data[complete.cases(data), ]
+  mat <- cor(data, method = method)
+  cor.mtest <- function(mat, method) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat <- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+      for (j in (i + 1):n) {
+        tmp <- cor.test(mat[, i], mat[, j], method = method)
+        p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+      }
+    }
+    colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+    p.mat
+  }
+  p.mat <- cor.mtest(data, method = method)
+  col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+  corrplot(mat,
+           method = "color", col = col(200), number.font = number.font,
+           mar = mar, number.cex = number.cex,
+           type = type, order = order,
+           addCoef.col = "black", # add correlation coefficient
+           tl.col = "black", tl.srt = tl.srt, # rotation of text labels
+           # combine with significance level
+           p.mat = p.mat, sig.level = sig.level, insig = "blank",
+           # hide correlation coefficients on the diagonal
+           diag = diag
+  )
+}
+
+# edit from here
+corrplot2(
+  data = x,
+  method = "pearson",
+  sig.level = 0.05,
+  order = "original",
+  diag = FALSE,
+  type = "upper",
+  tl.srt = 75
+)
+install.packages("correlation")
+library(correlation)
+
+correlation::correlation(x,
+                         include_factors = TRUE, method = "auto"
+)
