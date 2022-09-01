@@ -175,7 +175,7 @@ rft_median_model <- train(
 plot(rft_median_model)
 varImp(rft_median_model)
 
-glm_median_model
+glm_median_model                        # THIS IS ON ALL DATA, not TEST/TRAIN
 # Generalized Linear Model 
 # 
 # 635 samples
@@ -189,7 +189,7 @@ glm_median_model
 #   RMSE      Rsquared    MAE     
 # 5.366835  0.07497354  4.268011
 
-glmnet_median_model
+glmnet_median_model                         # THIS IS ON ALL DATA, not TEST/TRAIN
 # glmnet 
 # 
 # 635 samples
@@ -206,7 +206,7 @@ glmnet_median_model
 # RMSE was used to select the optimal model using the smallest value.
 # The final values used for the model were alpha = 1 and lambda = 0.231215.
 
-rf_median_model
+rf_median_model                         # THIS IS ON ALL DATA, not TEST/TRAIN
 # Random Forest 
 # 
 # 635 samples
