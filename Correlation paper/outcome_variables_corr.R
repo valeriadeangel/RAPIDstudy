@@ -10,37 +10,48 @@ library(readxl)
 library(writexl)
 library(agricolae)
 
-#load datasets
+#load datasets KCL
 redcap_full <- read_excel("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/REDcap full.xlsx")
-names(redcap_full)
+# names(redcap_full)
 
 wsas_full <- fread("C:/Users/k1754359/Downloads/master_questionnaire_wsas.csv", data.table=F)
 IDmap <- read_excel("//kclad.ds.kcl.ac.uk/anywhere/UserData/PSStore01/k1754359/My Documents/R/4. aRMT data.xlsx", sheet = "IDmap")
 
+#load datasets home
+redcap_full <- read_excel("C:/Users/valer/Downloads/REDcap full.xlsx")
+wsas_full <- fread("C:/Users/valer/Downloads/master_questionnaire_wsas.csv", data.table=F)
+IDmap <- read_excel("C:/Users/valer/Downloads/4. aRMT data.xlsx", sheet = "IDmap")
+
+
+
+
 ### prepare the outcome variables:
 
  # - as continuous scales
-# 1. QIDS
-# 2. PHQ9
-# 3. GAD7
-# 4. WSAS
+# 1. qids_total 
+# 2. total_phq 
+# 3. total_gad
+# 4. total_wsas 
 # 
 # - as binary outcomes
-# 5. QIDS_binary
-# 6. PHQ_binary
-# 7. GAD_binary
-# 8. WSAS_binary
+# 5. qids_binary 
+# 6. phq_binary  
+# 7. gad_binary  
+# 8. wsas_binary 
+# 9. was_cat
 
 
 
-# 1. QIDS
 
-qids <- fread("Downloads/QIDS_summarized.csv", data.table=F) %>%
-  dplyr::mutate(survey_date = lubridate::ymd(survey_date))
-qids$response_time = qids$response_time/60
-qids$complete_time = qids$complete_time/60
+# 1. QIDS ----
+
+# qids <- fread("Downloads/QIDS_summarized.csv", data.table=F) %>%
+#   dplyr::mutate(survey_date = lubridate::ymd(survey_date))
+# qids$response_time = qids$response_time/60
+# qids$complete_time = qids$complete_time/60
 
 # 5. QIDS binary
+
 #split by QIDS = 10/11
 #50% of the sample lies on each side in qids_temp and qids
 #this is the validated split indicating moderate depression
@@ -55,9 +66,10 @@ tbl <- table(qids$qids_total)   #change dataset to QIDS_temp?
 n <- nrow(qids)                 #change dataset
 cbind(Freq=tbl, Cumul=cumsum(tbl), Cumul.prop=cumsum(tbl*100/n))
 
-qids <- qids %>%
+qids_cat <- qids %>%
   mutate(qids_binary = ifelse(qids_total >9, 1, 0))
   
+
 
 # 2. PHQ9-----
 
@@ -73,7 +85,7 @@ phq_select <- redcap_full %>%
   mutate(total_phq = rowSums(across(phq9_1:phq9_9), na.rm = T)) %>%
   filter(!is.na(phq9_timestamp)) %>%    #select only one row per enrolment event
   
-  #dichotomise phq9 based on the code further below
+  # 6. PHQ9 binary - dichotomise phq9 based on the code further below
   mutate(phq_binary = ifelse(total_phq >9, 1, 0))
 
 
@@ -84,8 +96,6 @@ a <- phq_select[phq_select$redcap_event_name=="enrolment_arm_1", ] %>%
 # View(a)
 # we now have los P43 who did not have baseline data PHQ9
 
-
-# 6. PHQ9 binary
 
 #split by PHQ9 = 9/10
 #31.74% of the sample scored 9 or less
@@ -113,7 +123,7 @@ gad_select <- redcap_full %>%
   mutate(total_gad = rowSums(across(gad7_1:gad7_8), na.rm = T)) %>%
   filter(!is.na(gad7_timestamp)) %>%    #select only one row per enrolment event
   
-  #dichotomise gad7 based on the code further below
+  # 7. GAD7 binary - dichotomise gad7 based on the code further below
   mutate(gad_binary = ifelse(total_gad >9, 1, 0))
 
 
@@ -123,9 +133,6 @@ a <- gad_select[gad_select$redcap_event_name=="enrolment_arm_1", ] %>%
   summarise(count = n()) 
 # View(a)
 # we now have los P43 who did not have baseline data gad7
-
-
-# 7. GAD7 binary
 
 #split by gad7 = 9/10
 #40.58% of the sample scored 9 or less
@@ -147,9 +154,9 @@ cbind(Freq=tbl, Cumul=cumsum(tbl), Cumul.prop=cumsum(tbl*100/n))
 # 4. WSAS ----
 
 # wsas_full has been loaded as df
-names(wsas_full)
-head(wsas_full)[, 1:3]
-glimpse(wsas_select)
+# names(wsas_full)
+# head(wsas_full)[, 1:3]
+# glimpse(wsas_select)
 
 #clean date variable
 wsas_full$timestamp <- str_sub(wsas_full$timestamp, 1, 8)
@@ -163,6 +170,8 @@ wsas_id <- merge(wsas_full, IDmap, by.x=c("key.userId"), by.y=c("participant_id"
 wsas_select <- wsas_id %>%
   select(c("key.userId", "record_id", "date_assessment", contains(".value"), "timestamp")) %>%
   mutate(total_wsas = rowSums(across(value.answers.1.value:value.answers.5.value), na.rm = T)) %>%
+ 
+  # 8. WSAS binary
   mutate(wsas_binary = ifelse(total_wsas >9, 1, 0)) %>%
   mutate(wsas_cat = ifelse(total_wsas < 10, 0,
                            ifelse(total_wsas > 9 & total_wsas < 20, 1, 2)))
@@ -170,8 +179,6 @@ setnames(wsas_select, old = c('value.answers.0.value','value.answers.1.value','v
          new = c('wsas0','wsas1','wsas2','wsas3','wsas4','wsas5'))
 
 
-# 8. WSAS binary
-  
 #split by wsas = 9/10
 #18.5% of the sample scored 9 or less
 #this is the validated wsas split indicating mild depression
