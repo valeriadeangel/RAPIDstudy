@@ -1,0 +1,200 @@
+
+#######################
+##### REGRESSION with TEST / TRAIN SETS #######
+#######################
+
+
+####  SPLIT data into 80/20 PARTICIPANT split: ####
+#### ### ###### ### #### ### ###### ### #### ### ###### ###
+
+
+# find out how many rows each participant contributes - cumulative frequency
+qids_count <- qids %>%
+  group_by(p_id) %>%
+  summarise(count = n()) %>% 
+  mutate(csum = cumsum(count)) %>% 
+  mutate(prop.csum = csum/sum(count)) %>% 
+  View()
+
+
+#there are 59 participants - 80% of these = 47
+59*0.8 # 47 p_ids on the train set
+59*0.2 # 12 on the test set
+
+
+
+# 1) separate sample by participants
+train <- qids[1:515, ]     # 
+test <- qids[516:nrow(qids), ]
+
+
+
+# 2)	Randomly order the datasets
+rows <- sample(nrow(test))
+test <- test[rows, ]
+
+rows <- sample(nrow(train))
+train <- train[rows, ]
+#confirm test set size:
+nrow(train) / nrow(qids)
+
+
+
+#3) We run the model on the train data
+### regression model QIDS ####
+#      - outcome variable is continous
+#      - data MAR so median imputation
+#      - rf
+#      - 10-fold cross validation
+
+#split target from predictors:
+y<-train$qids_total
+x<-as.matrix(train[,25:62])
+
+
+set.seed(101)
+rf_median_model <- train(
+  x = x, 
+  y = y,
+  method = "rf",              #can be changed to glmnet. All code remains same
+  # na.action = na.pass,      # could ignore NAs instead of median impute. 
+  trControl = trainControl(
+    method = "cv", 
+    number = 10,
+    verboseIter = TRUE ),     #verbose gives us updates or running code
+  preProcess = c("medianImpute")
+)
+
+
+# for RF models only
+plot(rf_median_model)
+
+rf_median_model
+# Random Forest - 515 samples - 38 predictor
+#   
+# mtry  RMSE      Rsquared   MAE     
+# 2     5.051664  0.1990588  4.120657
+# 20    4.906323  0.2235400  3.905888
+# 38    4.877992  0.2307835  3.874144
+# 
+# Clearly 2 variables that have greatest impact, model does not significantly 
+# improve by adding the other 36 variables. 
+
+#predict in-sample - make in-sample prediction
+predicted <- predict(rf_median_model, train) 
+#then calculate the RMSE 
+actual <- train[,"qids_total"] # this is the first 515 rows on the y variable
+sqrt(mean((predicted-actual) ^2, na.rm = TRUE))
+# RMSE = 3.013575
+
+#out-of sample validation
+#next we test this on a new dataset - the last observations
+predicted <- predict(rf_median_model, test) 
+
+#Finally, we evaluate the RMSE on the test set by comparing predictions from our model to the actual mpg values for the test set 
+actual <- test[,"qids_total"] 
+sqrt(mean((predicted-actual) ^2, na.rm = TRUE))
+# RMSE = 5.185786
+
+#RMSE on in-sample = 3.013575, RMSE on new data = 5.185786 - performance is worse by 2.17 QIDS points.
+
+
+
+### Classification model QIDS ####
+
+#data = qids_cat
+
+# 1) separate sample by participants
+train <- qids_cat[1:515, ]     # 
+test <- qids_cat[516:nrow(qids_cat), ]
+
+
+
+# 2)	Randomly order the datasets
+rows <- sample(nrow(test))
+test <- test[rows, ]
+
+rows <- sample(nrow(train))
+train <- train[rows, ]
+#confirm test set size:
+nrow(train) / nrow(qids_cat)
+
+
+#3) We run the model on the train data
+#      - outcome variable is continous
+#      - data MAR so median imputation
+#      - rf
+#      - 10-fold cross validation
+
+#split target from predictors:
+y<-train$qids_binary
+y <- replace(y, y == 0, "no")
+y <- replace(y, y == 1, "yes")
+y <- as.factor(y)
+
+
+x<-as.matrix(train[,25:62])
+view(y)
+
+set.seed(101)
+class_model <- train(
+  x = x, 
+  y = y,
+  method = "ranger",          #fits random forests much faster
+  # na.action = na.pass,      # could ignore NAs instead of median impute. 
+  trControl = trainControl(
+    method = "cv", 
+    number = 10,
+    summaryFunction = twoClassSummary,
+    classProbs = TRUE,
+    verboseIter = TRUE ),     #verbose gives us updates or running code
+  preProcess = c("medianImpute")
+)
+
+class_model
+# mtry  splitrule   Accuracy   Kappa    
+# 2    gini        0.6350679  0.2297988
+# 2    extratrees  0.6506410  0.2481114
+# 20    gini        0.6642534  0.2998523
+# 20    extratrees  0.6600302  0.2853971
+# 38    gini        0.6679864  0.3088258
+# 38    extratrees  0.6582202  0.2808364
+
+# mtry  splitrule   ROC        Sens       Spec     
+# 2    gini        0.7045625  0.8034483  0.4179842
+# 2    extratrees  0.7229147  0.8793103  0.3557312
+# 20    gini        0.7337570  0.7896552  0.5025692
+# 20    extratrees  0.7384047  0.8103448  0.4664032
+# 38    gini        0.7387556  0.7862069  0.5154150
+# 38    extratrees  0.7392258  0.8103448  0.4622530
+
+p <- predict(class_model, test)
+summary(p)
+
+#make a simple 2-way frequency table
+table(p, test[["qids_binary"]])
+
+
+#use caret’s concfusion matrix function
+y <- test[["qids_binary"]]
+y <- replace(y, y == 0, "no")
+y <- replace(y, y == 1, "yes")
+y <- as.factor(y)
+
+confusionMatrix(p, y)
+
+## ROC curve
+
+install.packages("MLeval")
+library(caTools)  
+library(MLeval)
+
+# colAUC(predicted_probabilities, actual, plotROC = TRUE)
+predicted_probabilities <- predict(class_model, test, type = "prob")
+actual <- test[["qids_binary"]]
+  
+colAUC(predicted_probabilities, actual, plotROC = TRUE)
+# no       yes
+# 0 vs. 1 0.6572623 0.6572623
+
+# WHY DO I GET 2 ROC CURVES?!?!
