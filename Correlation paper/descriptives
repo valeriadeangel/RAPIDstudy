@@ -1,4 +1,100 @@
+library(multcomp)
+
+
+IDmap <- read_excel("4. aRMT data.xlsx", sheet = "IDmap")
+
+
 ###  Descriptives  ###
+
+demographics <- read_excel("2. Demographic Table.xlsx", sheet = "Demographics (R)") %>%
+  select(1:27) %>%
+  rename(p_id = P_ID) %>%
+  rename(date_of_assessment = `Date of assessment`) %>% 
+  mutate(gender = as.factor(Gender) %>% 
+           fct_recode("male" = "Male", "female" = "Female", "other" = "Neither")) %>% 
+  mutate(ethnicity = as.factor(Ethnicity) %>% 
+           fct_recode(
+             "Asian / Asian British / Any other Asian background" = "Asian / Asian British: Indian", 
+             "Asian / Asian British / Any other Asian background" = "Any other Asian background (Please describe)",
+             "Black / African / Caribbean / Black British / Any other Black background" = "Black / African / Caribbean / Black British: Caribbean",
+             "Black / African / Caribbean / Black British / Any other Black background" = "Any other Black / African / Caribbean background (Please describe)",
+             "Black / African / Caribbean / Black British / Any other Black background" = "Black / African / Caribbean / Black British: African",
+             "Middle Eastern" = "Middle Eastern",
+             "Mixed/Multiple ethnic groups" = "Mixed/Multiple ethnic groups: White and Black Caribbean",
+             "Mixed/Multiple ethnic groups" = "Any other Mixed / Multiple ethnic background (Please describe)",
+             "White / White British / Any other White background" = "Any other White background (please describe)", 
+             "White / White British / Any other White background" = "White: English / Welsh / Scottish / Northern Irish / British",
+             "White / White British / Any other White background" = "White: Irish",
+           )) %>% 
+  mutate(education_level = as.factor(`What is your highest completed level of education?`) %>% 
+           fct_recode(
+             "Degree level" = "Degree level education / diploma (e.g. BSc, BA)",
+             "Post-graduate Degree" = "Post-graduate Degree (e.g. MSc, MA, PhD)",                                                        
+             "College level or equivalent" = "College level education or equivalent (A lever, NVQ, International Baccaleureate, BTEC nationals)",
+             "Secondary education" = "Secondary education (GCSE, O Levels)"   
+           )) %>% 
+  mutate(employment = as.factor(`What is your main employment status?`)) %>% 
+  select(-c(Gender, DoB, Ethnicity, `What is your main employment status?`, `What is your highest completed level of education?` ))
+
+
+#get baseline QIDS scores    - - - - - requires second_order_feature_extraction.R to be run
+
+#add "date_of_assessment" to qids
+qids_merge <- merge(qids, IDmap[,2:3], by.x=c("p_id"), by.y=c("participant_id"), all = TRUE, incomparables = T)
+
+#create an event_name variable
+baseline_qids<- qids_merge %>% 
+  mutate(event_name = as.double(difftime(survey_date,date_assessment, units = "weeks")))
+baseline_qids$event_name <- round(baseline_qids$event_name, digits = 0)
+
+#create baseline df with only first 2 weeks
+baseline_qids <-  baseline_qids[baseline_qids$event_name < 3, ] %>% 
+  drop_na(p_id)
+
+#BASELINE DATA FOR PARTICIPANTS  --  baseline_qids
+#keep the lowest value per participant
+baseline_qids <- baseline_qids %>% 
+  group_by(p_id) %>% 
+  slice_min(order_by = event_name) %>% 
+  select(p_id, qids_total, date_assessment, event_name)
+
+#merge demographic data with baseline_qids$qids_total
+demo_total <- merge(demographics, baseline_qids, all = TRUE)
+glimpse(demographics)
+
+
+#### SIGNIFICANCE TESTING ON DEMOGRAPHICS ----
+#IV: qids_total - numeric
+#DV: Age, gender, ethnicity, education, employment
+
+cor.test(demo_total$qids_total, demo_total$Age)
+# r = 0.1214508, t = 0.78346, df = 41, p-value = 0.4379
+
+
+aov <- aov(qids_total ~ employment,
+               data = demo_total)
+summary(aov)
+
+#                  Df Sum Sq Mean Sq F value Pr(>F)
+# gender           2   25.5   12.74     0.8  0.456
+# ethnicity        4   79.7   19.92   1.299  0.288
+# education_level  3   10.9   3.627   0.217  0.884
+# employment       4  138.2   34.56   2.505 0.0582  (trend)
+
+
+# Tukey HSD test:
+post_test <- glht(aov,linfct = mcp(employment = "Tukey"))
+summary(post_test)    #only trend between unemploymnt and paid employment
+#                                            Estimate Std. Error t value Pr(>|t|)  
+# Unemployment - Paid employment == 0        3.5309     1.3439   2.627   0.0768 .
+plot(post_test)
+
+
+sum(is.na(baseline_qids$p_id))
+length(unique(baseline_qids$p_id))
+length(unique(IDmap$participant_id))
+
+
 
 ##### DEALING WITH MISSING DATA -----
 
@@ -11,9 +107,9 @@
 #show how many NAs per variable and make a list of them named "a"
 a <- as.data.frame((sapply(qids, function(x) sum(is.na(x))))/nrow(qids))
 a <- as.data.frame(which(a > .5, arr.ind = TRUE))
-low_data <- a$row
+low_data <- a$row     # varaibles with missing data
 
-names(qids)  #show me the names of all variables
+# names(qids)  #show me the names of all variables
 other_vars <- c(1:24, 45, 56) # columns that are not predictor variables
 
 inc_vars <- qids[,c(-c(low_data), -c(other_vars))] 
@@ -22,9 +118,14 @@ inc_vars <- qids[,c(-c(low_data), -c(other_vars))]
 names(inc_vars)
 
 
-# --- correlation plot ----
-m <- cor(inc_vars, use = "complete.obs",
-         method = "spearman")
+
+# CORRELATIONs -------------
+
+#correlation plot
+
+
+m <- cor(inc_vars, use = "complete.obs",   # first define inc_vars
+         method = "spearman")  
 
 mat <- inc_vars
 # mat : is a matrix of data
@@ -45,7 +146,7 @@ cor.mtest <- function(mat, ...) {
 }
 # matrix of the p-value of the correlation
 p.mat <- cor.mtest(inc_vars)
-head(p.mat[, 1:5])
+head( round( p.mat[, 1:10], digits=4))
 
 # Leave blank on non-significant coefficient
 corrplot(m, type="upper", order="hclust",
@@ -53,23 +154,24 @@ corrplot(m, type="upper", order="hclust",
 
 
 
-# -------------
+#cumulative frequency graph
+h<-graph.freq(qids$qids_total,plot=FALSE)
+points<-ogive.freq(h,col="red",frame=FALSE,
+                   xlab="QIDS", ylab="Accumulated relative frequency", main="Cumulative frequency")
 
 
 
-#loop for correlation coeffs
 
-x <- cor(qids[25:35], use = "complete.obs")
-corrplot(x, type="upper", order="hclust")
+names(qids)
 
-x <- as.data.frame(qids[25:62])
-cor.test(x, qids$qids_total) 
+#loop for correlation coeffs  - 
+
+### USE inc_vars for variables with sufficient data
+names(inc_vars)
 
 for (i in 25:62) {
-  corr <- cor.test(qids_temp$qids_total, qids_temp$qids_temp[[i]])
-  print(x)
-  x<-x+1
-  print(names(qids_temp)[i])
+  corr <- cor.test(qids$qids_total, qids[[i]])
+  print(names(qids)[i])
   print(corr$estimate)
   print(corr$p.value)
   # print(coef(summary(fit)))
@@ -78,86 +180,67 @@ for (i in 25:62) {
 
 
 #extract correlations and p values
-r <- cor(qids_temp$qids_total, qids_temp[25:28])
+r <- cor(qids$qids_total, qids[,names(inc_vars)], use = "complete.obs",
+         method = "spearman")
 r
-
-p <- sapply(qids_temp[,25:28], FUN=function(x, y) cor.test(x, y)$p.value, y=qids_temp$qids_total)
+p <- sapply(qids[,names(inc_vars)], FUN=function(x, y) cor.test(x, y)$p.value, y=qids$qids_total)
 p
+ci <- sapply(qids[,names(inc_vars)], FUN=function(x, y) cor.test(x, y)$conf.int, y=qids$qids_total)
+ci
 
-rbind(r, p)
+cors <- as.data.frame(rbind(r, p))
+
+qids_corrs <- rbind(corrs, ci)
+qids_corrs <- as.data.frame(t(qids_corrs))
+qids_corrs  <- tibble::rownames_to_column(qids_corrs, "feature")
+
+sig_cors <- as.data.frame(t(cors)) %>%
+  rename(cor_coef = V1) %>%
+  mutate(sig = ifelse(p < 0.01, "**",ifelse(p < 0.05, "*","_"))) %>%
+  arrange(desc(cor_coef))
+
+sig_cors[sig_cors$p < 0.05, ] 
 
 
-corr <- cor.test(qids_temp$qids_total, qids_temp$sleep_onset_mean)
-corr$p.value
-scatter.smooth(x=qids_temp$sleep_onset_mean, y=qids_temp$qids_total, main="plot")  # scatterplot
-linearMod <- lm(qids_total ~ sleep_onset_mean, data=qids_temp)  # build linear regression model on full data
-print(linearMod)
-summary(linearMod)
+# one line corr plot - BEST TO DO IN EXCEL
 
-
-#### corr plot####
-# do not edit
-
-corrplot2 <- function(data,
-                      method = "pearson",
-                      sig.level = 0.05,
-                      order = "original",
-                      diag = FALSE,
-                      type = "upper",
-                      tl.srt = 90,
-                      number.font = 1,
-                      number.cex = 1,
-                      mar = c(0, 0, 0, 0)) {
-  library(corrplot)
-  data_incomplete <- data
-  data <- data[complete.cases(data), ]
-  mat <- cor(data, method = method)
-  cor.mtest <- function(mat, method) {
-    mat <- as.matrix(mat)
-    n <- ncol(mat)
-    p.mat <- matrix(NA, n, n)
-    diag(p.mat) <- 0
-    for (i in 1:(n - 1)) {
-      for (j in (i + 1):n) {
-        tmp <- cor.test(mat[, i], mat[, j], method = method)
-        p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
-      }
-    }
-    colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
-    p.mat
-  }
-  p.mat <- cor.mtest(data, method = method)
-  col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
-  corrplot(mat,
-           method = "color", col = col(200), number.font = number.font,
-           mar = mar, number.cex = number.cex,
-           type = type, order = order,
-           addCoef.col = "black", # add correlation coefficient
-           tl.col = "black", tl.srt = tl.srt, # rotation of text labels
-           # combine with significance level
-           p.mat = p.mat, sig.level = sig.level, insig = "blank",
-           # hide correlation coefficients on the diagonal
-           diag = diag
-  )
-}
-
-# edit from here
-corrplot2(
-  data = x,
-  method = "pearson",
-  sig.level = 0.05,
-  order = "original",
-  diag = FALSE,
-  type = "upper",
-  tl.srt = 75
-)
-install.packages("correlation")
-library(correlation)
-
-correlation::correlation(x,
-                         include_factors = TRUE, method = "auto"
-)
+Dat = read.table(text="var1 var2 beta
+total_sleep_time_mean	qids	 -0.22140303
+total_sleep_time_std	qids 	0.17548721
+time_in_bed_mean           qids	 -0.20725952
+time_in_bed_std	         qids 	0.17899769
+light_pct_mean	         qids 	-0.05356106
+light_pct_std	         qids 	0.04302783
+deep_pct_mean	         qids 	0.07160059
+deep_pct_std               qids 	0.08274047
+REM_pct_mean	         qids 	0.04087164
+REM_pct_std	         qids 	0.15931022
+awake_pct_mean	         qids 	0.04363294
+awake_pct_std	         qids 	0.12804331
+sleep_onset_mean	         qids 	0.26594214
+sleep_onset_std	         qids 	0.160348
+sleep_offset_mean	          qids 	0.12744487
+sleep_offset_std	          qids 	0.13015166
+sleep_efficiency_mean	 qids 	-0.04363294
+sleep_efficiency_std	 qids 	0.12804331
+awakenings_mean	          qids 	-0.099975
+awakenings_std	          qids 	0.07777389",
+                 header=TRUE)
 
 
 
+## Now reshape the data  (same as before)
+wide = reshape(Dat[,1:3], idvar = c("var1"),
+               timevar="var2", direction = "wide")
+rownames(wide) = wide$var1
+wide = wide[,-1]
+colnames(wide) = sub("beta.", "", colnames(wide))
 
+
+## Pass it to corrplot
+library(corrplot)
+corrplot(as.matrix(wide), is.corr=FALSE, tl.srt=0)
+
+
+#plot
+scatter.smooth(x=qids$sleep_onset_mean, y=qids$qids_total, main="plot")  # scatterplot
