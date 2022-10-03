@@ -1,65 +1,49 @@
-
 library(lmerTest)
-library(lubridate)
-library(tidyverse)
 library(data.table)
-library(dplyr)
 library(corrplot)
 library(glmnet)
 library(caret)
 library(groupdata2)
+library(readxl)
+library(multcomp)
+library(agricolae)
+library(tidyverse)
+library(lubridate)
+library(pacman)
+
+
+select <- dplyr::select
 
 options(scipen=999)
 # options(scipen=0) # to revert scientific notation
 
-#load from Home:
-qids <- fread("C:/Users/valer/Downloads/QIDS_summarized.csv", data.table = F) %>%
+
+getwd()
+#load from IoP:
+setwd("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/R scripts") 
+
+#load from home:
+setwd("C:/Users/k1754359/Downloads")
+
+
+qids <- fread("QIDS_summarized_updated.csv", data.table=F) %>%
   dplyr::mutate(survey_date = lubridate::ymd(survey_date))
 
-sleep <- fread("C:/Users/valer/Downloads/daily_sleep_feature.csv", data.table=F) %>%
+
+sleep <- fread("daily_sleep_feature.csv", data.table=F) %>%
   dplyr::mutate(date_str = lubridate::ymd(date_str))
 
-bt <- fread("C:/Users/valer/Downloads/daily_bt_feature.csv", data.table=F) %>%
+bt <- fread("daily_bt_feature.csv", data.table=F) %>%
   dplyr::mutate(date_str = lubridate::ymd(date_str))
 
-gps <- fread("C:/Users/valer/Downloads/daily_GPS_feature.csv", data.table=F) %>%
+gps <- fread("daily_GPS_feature.csv", data.table=F) %>%
   dplyr::mutate(date_str = lubridate::ymd(date_str))
 
 
-
-#load from Uni:
-# qids <- fread("Downloads/QIDS_summarized.csv", data.table=F) %>%
-#   dplyr::mutate(survey_date = lubridate::ymd(survey_date))
-# 
-# sleep <- fread("Downloads/daily_sleep_feature.csv", data.table=F) %>%
-#   dplyr::mutate(date_str = lubridate::ymd(date_str))
-# 
-# bt <- fread("Downloads/daily_bt_feature.csv", data.table=F) %>%
-#   dplyr::mutate(date_str = lubridate::ymd(date_str))
-
-# gps <- fread("Downloads/daily_GPS_feature.csv", data.table=F) %>%
-#   dplyr::mutate(date_str = lubridate::ymd(date_str))
-
-# read qids table ----
-# qids <- fread("C:\Users\k1754359\Downloads\QIDS_summarized.csv", data.table = F) %>%
-
-# qids <- fread("C:/Users/k1754359/Downloads/QIDS_summarized.csv", data.table=F) %>%
-#   dplyr::mutate(survey_date = lubridate::ymd(survey_date))
-qids$response_time = qids$response_time/60
-qids$complete_time = qids$complete_time/60
-fit <-lmer(q16 ~ response_time + (1 |p_id), qids)
-summary(fit)
-fit <-lmer(q16 ~ complete_time + (1 |p_id), qids)
-summary(fit)
 
 win_size <- 7
 
 # sleep -----
-# read sleep table 
-
-sleep <- fread("C:/Users/k1754359/Downloads/daily_sleep_feature.csv", data.table=F) %>%
-# sleep <- fread("C:/Users/valer/Downloads/daily_sleep_feature.csv", data.table=F) %>%
-  dplyr::mutate(date_str = lubridate::ymd(date_str))
 
 # extract second-order features
 sleep_feature <- colnames(sleep)[6:15]
@@ -91,10 +75,6 @@ for (i in 1:nrow(qids)){
   }
 }
 # BT features ----
-
-bt <- fread("C:/Users/k1754359/Downloads/daily_bt_feature.csv", data.table=F) %>%
-  dplyr::mutate(date_str = lubridate::ymd(date_str))
-
 bt_feature <- colnames(bt)[7:11]
 new_feature =c()
 
@@ -115,8 +95,8 @@ for (i in 1:nrow(qids)){
   bt_temp <- bt[bt$p_id==p_id_select,]
   bt_temp <- bt_temp[bt_temp$date_str >= date_select - days(win_size) & bt_temp$date_str < date_select,]
   bt_temp <- bt_temp[!is.na(bt_temp$bt_available_day), ]
-  qids$bt_day[i] <- sum(bt_temp$bt_available_day >=12)
-  bt_temp <- bt_temp[bt_temp$bt_available_day >=12,]
+  qids$bt_day[i] <- sum(bt_temp$bt_available_day >=12)   #change here for missing data threshold
+  bt_temp <- bt_temp[bt_temp$bt_available_day >=12,]     #change here for missing data threshold
   
   if (nrow(bt_temp)>=2){
     for (j in 1:length(bt_feature)){
@@ -130,8 +110,6 @@ for (i in 1:nrow(qids)){
 }
 
 # GPS ----
-gps <- fread("C:/Users/k1754359/Downloads/daily_GPS_feature.csv", data.table=F) %>%
-  dplyr::mutate(date_str = lubridate::ymd(date_str))
 
 gps_feature <- colnames(gps)[7:9]
 new_feature =c()
@@ -168,30 +146,337 @@ for (i in 1:nrow(qids)){
 
 
 qids_temp <- qids %>%
-  filter(sleep_day >=2)
+  filter(sleep_day >=2) # if there are more than 2 days. filtering for at least 2 days of sleep per week
 
-fit <-lmer(qids_total ~ qids_temp[, 62] + (1 |p_id), qids_temp)
+qids_prmt <- qids
+
+###### V. important exclusion
+qids_prmt <- qids_prmt %>% 
+  filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed")
+
+
+### FITBIT FEATURES ----
+# Extract HR, Steps, and Activity data 
+
+setwd("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/data stream files")
+# Date ID
+Date_ID_set <- read_excel("HR_210322.xlsx", sheet = "Time Interval ID") %>%
+  rename(DATE_ID = timeInterval_ID) %>%
+  rename(date_str = datetimeStart)
+# read HR feature table
+HR_set <- read_excel("HR_210322.xlsx", sheet = "HR") %>%
+  dplyr::select(SUBJECT_ID, DATE_ID, MISSING_RATE, FEATURE_001, FEATURE_002, FEATURE_003, FEATURE_004, FEATURE_005
+                , FEATURE_006, FEATURE_007, FEATURE_008, FEATURE_009, FEATURE_010, FEATURE_015, FEATURE_016, FEATURE_017
+                , FEATURE_018, FEATURE_019, FEATURE_020)
+# map dateid
+HR_set <- merge(HR_set,Date_ID_set) %>%
+  dplyr::select(-DATE_ID) %>%
+  dplyr::mutate(date_str = lubridate::ymd(date_str))%>%
+  rename(p_id=SUBJECT_ID)
+
+# read Step feature table
+Step_set <- read_excel("STEPS_210322.xlsx", sheet = "Hoja1") %>%
+  dplyr::select(SUBJECT_ID, DATE_ID, MISSING_RATE, FEATURE_001, FEATURE_002, FEATURE_003, FEATURE_004, FEATURE_005
+                , FEATURE_006, FEATURE_007, FEATURE_019, FEATURE_020, FEATURE_022
+                , FEATURE_024, FEATURE_025, FEATURE_026)
+# map date id
+Step_set <- merge(Step_set,Date_ID_set) %>%
+  dplyr::select(-DATE_ID) %>%
+  dplyr::mutate(date_str = lubridate::ymd(date_str))%>%
+  rename(p_id=SUBJECT_ID)
+
+# read Activity feature table
+Activity <- read_excel("ACTIVITY_210322.xlsx", sheet = "Hoja1") %>%
+  dplyr::select(SUBJECT_ID, DATE_ID, MISSING_RATE,FEATURE_001,FEATURE_002,FEATURE_003,FEATURE_004,FEATURE_005
+                ,FEATURE_006,FEATURE_007,FEATURE_008,FEATURE_009,FEATURE_010,FEATURE_011,FEATURE_012,FEATURE_013
+                ,FEATURE_014,FEATURE_015,FEATURE_016,FEATURE_017,FEATURE_018)
+# map date id
+Activity <- merge(Activity, Date_ID_set) %>%
+  dplyr::select(-DATE_ID) %>%
+  dplyr::mutate(date_str = lubridate::ymd(date_str))%>%
+  rename(p_id=SUBJECT_ID)
+
+
+# extract second-order features for each qids record
+# read qids table
+qids <- fread("QIDS_summarized_updated.csv", data.table=F) %>%
+  dplyr::mutate(survey_date = lubridate::ymd(survey_date))
+
+# HR
+# extract second-order hr features
+hr_feature <- colnames(HR_set)[2:18]
+second_feature <- c("_mean_hr", "_std_hr")
+new_feature =c()
+for (i in 1:length(hr_feature)){
+  for (j in 1:length(second_feature)){
+    new_feature = append(new_feature,paste(hr_feature[i],second_feature[j],sep = ""))
+  }
+}
+pre_col_num <- ncol(qids)
+qids$hr_day <- NA
+qids[, new_feature] <-NA
+
+for (i in 1:nrow(qids)){
+  print(i)
+  p_id_select <- qids$p_id[i]
+  date_select <- qids$survey_date[i]
+  hr_temp <- HR_set[HR_set$p_id==p_id_select,]
+  hr_temp <- hr_temp[hr_temp$date_str >= date_select - days(win_size) & hr_temp$date_str < date_select,]
+  # threshold for daily hr missing rate
+  hr_temp <- hr_temp[hr_temp$MISSING_RATE < 50,]
+  
+  qids$hr_day[i] <- nrow(hr_temp)
+  if (nrow(hr_temp) >= 2){
+    for (j in 1:length(hr_feature)){
+      # all days
+      qids[i, (j-1) *length(second_feature) + 1 + pre_col_num + 1] = mean(as.numeric(hr_temp[,j+1]), na.rm = TRUE)
+      qids[i, (j-1) *length(second_feature) + 2 + pre_col_num + 1] = sd(as.numeric(hr_temp[,j+1]), na.rm = TRUE)
+    }
+  }
+}
+
+# step features
+step_feature <- colnames(Step_set)[2:15]
+second_feature <- c("_mean_step", "_std_step")
+new_feature =c()
+for (i in 1:length(step_feature)){
+  for (j in 1:length(second_feature)){
+    new_feature = append(new_feature,paste(step_feature[i],second_feature[j],sep = ""))
+  }
+}
+pre_col_num <- ncol(qids)
+qids$step_day <- NA
+qids[, new_feature] <-NA
+
+for (i in 1:nrow(qids)){
+  print(i)
+  p_id_select <- qids$p_id[i]
+  date_select <- qids$survey_date[i]
+  step_temp <- Step_set[Step_set$p_id==p_id_select,]
+  step_temp <- step_temp[step_temp$date_str >= date_select - days(win_size) & step_temp$date_str < date_select,]
+  # threshold for daily hr missing rate
+  step_temp <- step_temp[step_temp$MISSING_RATE < 50,]
+  
+  qids$step_day[i] <- nrow(step_temp)
+  if (nrow(step_temp) >= 2){
+    for (j in 1:length(step_feature)){
+      # all days
+      qids[i, (j-1) *length(second_feature) + 1 + pre_col_num + 1] = mean(as.numeric(step_temp[,j+1]), na.rm = TRUE)
+      qids[i, (j-1) *length(second_feature) + 2 + pre_col_num + 1] = sd(as.numeric(step_temp[,j+1]), na.rm = TRUE)
+    }
+  }
+}
+
+
+# activity features
+activity_feature <- colnames(Activity)[2:20]
+second_feature <- c("_mean_Activity", "_std_Activity")
+new_feature =c()
+for (i in 1:length(activity_feature)){
+  for (j in 1:length(second_feature)){
+    new_feature = append(new_feature,paste(activity_feature[i],second_feature[j],sep = ""))
+  }
+}
+pre_col_num <- ncol(qids)
+qids$activity_day <- NA
+qids[, new_feature] <-NA
+
+for (i in 1:nrow(qids)){
+  print(i)
+  p_id_select <- qids$p_id[i]
+  date_select <- qids$survey_date[i]
+  activity_temp <- Activity[Activity$p_id==p_id_select,]
+  activity_temp <- activity_temp[activity_temp$date_str >= date_select - days(win_size) & activity_temp$date_str < date_select,]
+  # threshold for daily hr missing rate
+  activity_temp <- activity_temp[activity_temp$MISSING_RATE < 50,]
+  
+  qids$activity_day[i] <- nrow(activity_temp)
+  if (nrow(activity_temp) >= 2){
+    for (j in 1:length(activity_feature)){
+      # all days
+      qids[i, (j-1) *length(second_feature) + 1 + pre_col_num + 1] = mean(as.numeric(activity_temp[,j+1]), na.rm = TRUE)
+      qids[i, (j-1) *length(second_feature) + 2 + pre_col_num + 1] = sd(as.numeric(activity_temp[,j+1]), na.rm = TRUE)
+    }
+  }
+}
+
+
+
+qids_temp <- qids %>%
+  filter(hr_day >=4)
+
+fit <-lmer(qids_total ~ FEATURE_005_std_step + (1 |p_id), qids)
 summary(fit)
 
 
+qids_fb <- qids
 
+###### V. important exclusion
+qids_fb <- qids_fb %>% 
+  filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed")
+
+
+
+#### combine both second_features! -----
+qids_passive <- merge(qids_prmt, qids_fb)
+
+
+### ### 
+#  REMEMBER TO EXCLUDE:     ####
+# f5978923-cef2-4eeb-a49c-7d79be4b53eb
+# 5786af5e-99e3-4f78-848a-d3b67b8eb7ed
+### ###
+
+
+###### V. important exclusion
+qids_passive <- qids_passive %>% 
+  filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed")
+
+## can read qids_passive.csv
+
+##### exclude variables with MISSING DATA -----
+# missing data <= 50%       =  impute
+# missing data > 50%       =  remove variable
+
+#show how many NAs per variable and make a list of them named "a"
+a <- as.data.frame((sapply(qids_passive, function(x) sum(is.na(x))))/nrow(qids_passive))
+a <- as.data.frame(which(a > .5, arr.ind = TRUE))
+low_data <- a$row
+
+names(qids_passive)  #show me the names of all variables
+
+other_vars <- c(1:22, 43, 54, 61, 96, 125) # columns that are not predictor variables
+
+length(qids_passive)   # 163
+length(other_vars)     # 27
+length(low_data)       # 16
+163-27-16              # 120 predictor variables left 
+
+inc_vars <- qids_passive[,c(-c(low_data), -c(other_vars))]
+
+# variables with > 50% available data
+qids_avail <- qids_passive[,-c(low_data)]
 
 ### Multilevel Regression models -----
 
-hist(qids$qids_total)
-hist(qids_temp$qids_total)
+
+ #  ### ### ### ###  ###
+### LOAD DESCRIPTIVES.R ####
+ #  ### ### ### ###  ###
 
 
-basic.lm <- lm(qids_total ~ total_sleep_time_std, data = qids)
-summary(basic.lm)
+#combine the digital+qids features to demographic variables
+demo <-demographics[c(1, 14,23,24,25,26)]      # demographic variables from script = descriptives.R !!!
 
 
-fit <-lmer(qids_total ~ sleep_onset_mean + (1 |p_id),data = qids)
+d <-merge(qids_avail, demo)
+names(d)
+# for (i in 22:147)
+
+data = d         #     <- - - - select the data to be used for the models
+
+## conduct the models adjusting for Age, gender.
+for (i in 22:147) {               # change depending on data used
+  fit <-lmer(q2               
+             ~ data[[i]]          
+             + Age + gender  
+             + (1 |p_id),data = data) 
+  print(toupper(names(data)[i]))
+  # print(summary(fit))
+  print(round(coef(summary(fit)), digits = 6))
+  # print(round(confint(fit), digits = 6))
+}
+
+fit <-lmer(qids_total ~ deep_pct_std +  Age + gender + (1 |p_id), data = data)
 summary(fit)
+confint(fit)
+
+
+18.470/(18.470 + 7.434) # ~ 70% is the variance explained by individual difference
+fit@sigma
+
+
+ ### ### ### ###  ###
+##  QIDS by items ####
+ ### ### ### ###  ###
+
+
+## to save output to an excel/csv doc ####
+
+library(lme4)
+
+FEATURE <- c()
+Estimate <- c()
+StdError <- c()
+df <- c()
+t_value <- c()
+pr_t <- c()
+two_five<- c()
+nine_five <- c()
+pacman::p_load(progress)
+## Basic
+pb <- progress_bar$new(total=100)
+for (i in 23:26) {
+  pb$tick()
+  fit <-lmer(q1
+             ~ data[[i]]
+             + Age + gender
+             + (1 |p_id),data = data)
+  FEATURE <- append(Q1,toupper(names(data)[i]))
+  Estimate <- append(Estimate,round(coef(summary(fit)), digits = 6)[2,1])
+  StdError <- append(StdError,round(coef(summary(fit)), digits = 6)[2,2])
+  df <- append(df,round(coef(summary(fit)), digits = 6)[2,3])
+  t_value <- append(t_value,round(coef(summary(fit)), digits = 6)[2,4])
+  pr_t <- append(pr_t,round(coef(summary(fit)), digits = 6)[2,5])
+  two_five <- append(two_five,round(confint(fit), digits = 6)[4,1])
+  nine_five <- append(nine_five,round(confint(fit), digits = 6)[4,2])
+  Sys.sleep(0.1)
+  
+}
+
+data_results= data.frame(FEATURE,Estimate,StdError,df,t_value,pr_t,two_five,nine_five)
+colnames(data_results) <- c("FEATURE","Estimate","Std. eror","df","t value","Pr(>|t|)","2.5 CI","97.5 CI")
+write.csv(data_results,"model output.csv",row.names = FALSE)
 
 
 
-(split_plot <- ggplot(aes(sleep_onset_std, qids_total), data = qids_temp) + 
+### group QIDS items ####
+
+
+d <- d %>%
+  mutate(sleep = pmax(q1, q2, q3, q4)) %>%
+  mutate(weight = pmax(q6, q7, q8, q9)) %>%
+  mutate(psychomotor = pmax(q15, q16)) %>%
+  rename(dep_mood = q5) %>%
+  rename(conc = q10) %>%
+  rename(guilt = q11) %>%
+  rename(suicide = q12) %>%
+  rename(interest = q13) %>%
+  rename(fatigue = q14) 
+
+d = data
+
+for (i in 22:40) {               # change depending on data used
+  fit <-lmer(weight               
+             ~ data[[i]]          
+             + Age + gender  
+             + (1 |p_id),data = data) 
+  print(toupper(names(data)[i]))
+  # print(summary(fit))
+  print(round(coef(summary(fit)), digits = 6))
+  # print(round(confint(fit), digits = 6))
+}
+
+summary(fit)$coefficients[2,5] 
+
+#PLOTS ----
+
+plot(fit)  # looks alright, no patterns evident
+qqnorm(resid(fit))
+qqline(resid(fit))  # points fall nicely onto the line - good!
+
+
+(split_plot <- ggplot(aes(sleep_onset_std, qids_total), data = data) + 
     geom_point() + 
     facet_wrap(~ p_id) + # create a facet for each mountain range
     xlab("feature") + 
@@ -199,300 +484,3 @@ summary(fit)
 
 (prelim_plot <- ggplot(qids_temp, aes(x = sleep_onset_mean, y = qids_total)) +
     geom_point())
-
-#loop for mixed linear models
-
-x<-25
-for (i in 25:62) {
-  fit <-lmer(qids_total ~ qids_temp[[i]] + (1 |p_id),data = qids_temp)
-  print(x)
-  x<-x+1
-  print(names(qids_temp)[i])
-  print(summary(fit))
-  # print(coef(summary(fit)))
-  # print(summary(fit)$coefficients[2,"Pr(>|t|)"])
-}
-
-###### Lasso regularised regression - model 1 #####
-
-library(glmnet)
-library(caret)
-
-
-#select predictor variables = x
-x<-as.matrix(qids_temp[,25:62])
-#select outcome variable = y
-y<-qids_temp$qids_total
-
-#t to transpose
-t(summary(x))
-
-#Fit a penalised regression model for predicting depression outcome based on the available covariates
-# using LASSO. Plot the penalised regression coefficients against the penalty values.
-
-lasso<-glmnet(x,y, family="gaussian", alpha=1)
-plot(lasso, xvar="lambda")
-
-# Use 5-fold cross-validation to find the optimal penalty. 
-# Select (identify) variables that are predictive of depression
-# based on the optimal LASSO model.
-
-set.seed(101) # This command is optional, but helps getting the same answer every time the code is run
-
-cv10<-cv.glmnet(x,y, nfold=5)
-plot(cv10)
-#The optimal penalty can be obtained by extracting the lambda.min 
-# component of the cross-validation object
-cv10$lambda.min    #0.1140423
-
-# the LASSO coefficients at the optimal penalty can be obtained by using the 
-# coef() command as shown below
-coef(cv10, s="lambda.min")
-# total_sleep_time_mean  -0.774381773
-# time_in_bed_std         0.494869061
-# light_pct_std          -0.046034800
-# deep_pct_mean          -0.021796179
-# deep_pct_std            0.166638614
-# REM_pct_mean            0.042043450
-# REM_pct_std             0.117227443
-# awake_pct_std           0.002766796
-# sleep_onset_mean        0.204980677
-# sleep_onset_std         0.362882461
-# awakenings_mean        -0.184894049
-# awakenings_std          0.592813522
-# bt_day                 -0.150695157
-
-
-
-##### Lasso regularised regression - model 2 ####
-
-# Before training the model, we normalize each feature to have zeros mean and 
-# one standard deviation. Feature normalization avoids the different feature 
-# scales adversely affecting regularization.
-
-#standardize the x matrix 
-x_std <- scale(x)
-mean(x_std[, 10])
-sd(x_std[,10])
-
-#now, LASSO
-lasso<-glmnet(x_std,y, family="gaussian", alpha=1)
-plot(lasso, xvar="lambda")
-
-set.seed(101)
-cv10<-cv.glmnet(x_std,y, nfold=5)
-plot(cv10)
-cv10$lambda.min    #0.1140423
-coef(cv10, s="lambda.min")
-# total_sleep_time_mean  -0.976108951
-# time_in_bed_std         0.470132717
-# light_pct_std          -0.108446436
-# deep_pct_mean          -0.078366641
-# deep_pct_std            0.235235520
-# REM_pct_mean            0.169575321
-# REM_pct_std             0.221237348
-# awake_pct_std           0.003438658
-# sleep_onset_mean        0.402558871
-# sleep_onset_std         0.320859040
-# awakenings_mean        -0.174567026
-# awakenings_std          0.353795782
-# bt_day                 -0.299968058
-
-
-##### y also standardised (not sure this is necessary)
-y_std <- scale(y)
-lasso<-glmnet(x_std,y_std, family="gaussian", alpha=1)
-plot(lasso, xvar="lambda")
-
-
-set.seed(101)
-cv10<-cv.glmnet(x_std,y_std, nfold=5)
-plot(cv10)
-
-cv10$lambda.min    #0.02173938
-coef(cv10, s="lambda.min")
-
-# total_sleep_time_mean  -1.860714e-01
-# time_in_bed_std         8.961934e-02
-# light_pct_std          -2.067267e-02
-# deep_pct_mean          -1.493869e-02
-# deep_pct_std            4.484192e-02
-# REM_pct_mean            3.232540e-02
-# REM_pct_std             4.217351e-02
-# awake_pct_std           6.554963e-04
-# sleep_onset_mean        7.673804e-02
-# sleep_onset_std         6.116396e-02
-# awakenings_mean        -3.327695e-02
-# awakenings_std          6.744254e-02
-# bt_day                 -5.718160e-02
-
-
-### Get the MSE for the best lambda model  ####
-MSE <- (cv10$cvm)  # $cvm inlcudes the MSE of all 100 lambdas , min() selects the snmallest
-print(MSE)  #0.9253454
-# The Mean Squared Error (MSE) is a measure of how close a fitted line is to data points
-# MSE = 0.93 suggests overfitting line?
-
-
-#### Calculate the r2 of the best model
-
-# Explained variance of unseen cases
-paste("R2 is: ",  1-(MSE_min/var(y))) #0.967796286364433"
-# The explained variance of predicting unseen cases is about 97%. The best model, 
-# therefore, predicted 97% of the variance in unseen data. This does not mean that 
-# we expect that our model will explain 9% of the data with a completely new random 
-# sample: We assessed 100 different lambdas and this r2 is optimistic because we 
-# performed model selection using the MSE (and therefore r2 ) of unseen cases  as 
-# a selection criteria, see lecture Validation!
-
-
-##### Alternative best lambda (lambda.1SE)
-# This lambda penalizes slightly more than the minimum lambda
-# It selects a more parsimonious model with almost the same MSE
-
-coef(cv10, s="lambda.1se")  #selects much fewer variables
-# total_sleep_time_mean  -5.513739e-02
-# sleep_onset_mean        6.261432e-02
-# sleep_onset_std         1.375154e-02
-
-# Addtional information: Get MSE for minimum + 1SE lambda
-MSE_1se<- cv10$cvm[which(cv10$lambda == cv10$lambda.1se)]
-MSE_1se #0.9645882
-
-paste("R2 is: ",  1-(MSE_1se/var(y)))  # 0.964948670789199"
-
-
-###Now I need to compare two models (the baseline and the predictor) but not sure how to do that. 
-# We report the mean absolute error
-# and correlations between the predicted PHQ-8 scores and the groundtruth. 
-# We use the population PHQ-8 mean as the prediction baseline to compare the prediction performance.
-# The MAE of the baseline model is 4.29. Our prediction model predict
-# the pre PHQ-8 scores with MAE of 3.60, which is 0.59 lower than the baseline. 
-# The predicted PHQ-8 score strongly correlate with the groundtruth with r = 0.578,p < 0.001
-
-
-
-
-#### Cross-validation grouped by participant####
-install.packages("groupdata2")
-library(groupdata2)
-
-
-
-#### Regression model with selected (sig) features ####
-
-# (a) --- MODEL WITH ONLY SIG FEATURES  ---
-
-#select predictor variables = x
-sig_x <- qids_temp %>% 
-  select("deep_pct_std", 
-         "sleep_onset_mean", 
-         "sleep_onset_std", 
-         "sleep_offset_mean")
-
-x<-as.matrix(sig_x)
-#select outcome variable = y
-y<-qids_temp$qids_total
-
-
-#standardize the variables
-x_std <- scale(x)
-y_std <- scale(y)
-
-mean(x_std[, 1])
-sd(x_std[,1])
-
-lasso<-glmnet(x_std,y_std, family="gaussian", alpha=1)
-plot(lasso, xvar="lambda")
-
-set.seed(101)
-cv10<-cv.glmnet(x_std,y_std, nfold=10)
-plot(cv10)
-cv10$lambda.min    #0.0006337146
-coef(cv10, s="lambda.min")
-# all 4 variables are selected.
-
-# a normal multiple regression
-# model <- lm(qids_total ~ deep_pct_std + sleep_onset_mean + sleep_onset_std + sleep_offset_mean, data = qids_temp)
-# summary(model)
-# all variables are significant (trend for deep_pct_std)
-
-
-### Get the MSE for the best lambda model  ####
-MSE <- min(cv10$cvm)
-print(MSE)  # 0.9199701
-# The Mean Squared Error (MSE) is a measure of how close a fitted line is to data points
-MSE<- cv10$cvm[which(cv10$lambda == cv10$lambda.min)]
-MSE
-
-
-# Calculate the r2 of the best model
-# Explained variance of unseen cases
-paste("R2 is: ",  1-(MSE_min/var(y))) #0.967796286364433"
-
-
-#  (b) --- MODEL WITH SIG AND TREND FEATURES  ---
-
-#select predictor variables = x - significnat and TREND
-sig_x <- qids_temp %>% 
-  select("deep_pct_std", 
-         "sleep_onset_mean", 
-         "sleep_onset_std", 
-         "sleep_offset_mean",
-         "deep_pct_std",
-         "sleep_onset_mean",
-         "sleep_onset_std",
-         "sleep_offset_mean",
-         "awake_pct_mean",
-         "sleep_efficiency_mean",
-         "bt_max_day_std",
-         "bt_std_day_std",
-         "bt_range_day_std")
-
-x<-as.matrix(sig_x)
-#select outcome variable = y
-y<-qids_temp$qids_total
-
-
-#standardize the variables
-x_std <- scale(x)
-y_std <- scale(y)
-
-mean(x_std[, 1])
-sd(x_std[,1])
-
-lasso<-glmnet(x_std,y_std, family="gaussian", alpha=1)
-plot(lasso, xvar="lambda")
-
-set.seed(101)
-cv10<-cv.glmnet(x_std,y_std, nfold=10)
-plot(cv10)
-cv10$lambda.min    #0.0006337146 - same
-coef(cv10, s="lambda.min")
-# selected variables:
-# deep_pct_std           7.831076e-02
-# sleep_onset_mean       3.431133e-01
-# sleep_onset_std        1.263320e-01
-# sleep_offset_mean     -2.008403e-01
-# awake_pct_mean         4.191298e-02
-# sleep_efficiency_mean -6.938894e-18
-
-
-### Get the MSE for the best lambda model  ####
-MSE <- (cv10$cvm)  
-print(min(MSE))  # 0.9251753
-# The Mean Squared Error (MSE) is a measure of how close a fitted line is to data points
-
-### Get the MSE for the best lambda model  ####
-MSE <- min(cv10$cvm)
-print(MSE)  # 0.9199701
-# The Mean Squared Error (MSE) is a measure of how close a fitted line is to data points
-
-# Calculate the r2 of the best model
-paste("R2 is: ",  1-(MSE_min/var(y))) #0.967796286364433"
-
-
-
-####
-#There isn't any difference between the model pre and post multilevel regression analyses. 
-####
