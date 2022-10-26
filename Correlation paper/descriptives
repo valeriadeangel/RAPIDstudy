@@ -1,8 +1,7 @@
 library(multcomp)
-
+library(openxlsx)
 
 IDmap <- read_excel("4. aRMT data.xlsx", sheet = "IDmap")
-
 
 ###  Descriptives  ###
 
@@ -10,6 +9,11 @@ demographics <- read_excel("2. Demographic Table.xlsx", sheet = "Demographics (R
   select(1:27) %>%
   rename(p_id = P_ID) %>%
   rename(date_of_assessment = `Date of assessment`) %>% 
+  rename(tx_start = `Treatment start date`) %>%
+  rename(tx_end = `Tx end`) %>%
+  rename(tx_length = `Tx length (weeks)`) %>%
+  rename(tx_start_days = `Tx start lag (days)`) %>%
+  mutate(tx_start_days = as.numeric(tx_start_days)) %>%
   mutate(gender = as.factor(Gender) %>% 
            fct_recode("male" = "Male", "female" = "Female", "other" = "Neither")) %>% 
   mutate(ethnicity = as.factor(Ethnicity) %>% 
@@ -35,9 +39,16 @@ demographics <- read_excel("2. Demographic Table.xlsx", sheet = "Demographics (R
            )) %>% 
   mutate(employment = as.factor(`What is your main employment status?`)) %>% 
   select(-c(Gender, DoB, Ethnicity, `What is your main employment status?`, `What is your highest completed level of education?` ))
+demographics$tx_start = convertToDate(demographics$tx_start, origin = "1900-01-01")
+demographics$tx_end = convertToDate(demographics$tx_end, origin = "1900-01-01")
 
 
-#get baseline QIDS scores    - - - - - requires second_order_feature_extraction.R to be run
+demo <-demographics[c(1, 14,23,24,25,26)]      # demographic variables from script = descriptives.R !!!
+
+
+#get baseline QIDS scores ------- 
+# requires second_order_feature_extraction.R to be run
+
 
 #add "date_of_assessment" to qids
 qids_merge <- merge(qids, IDmap[,2:3], by.x=c("p_id"), by.y=c("participant_id"), all = TRUE, incomparables = T)
@@ -96,38 +107,96 @@ length(unique(IDmap$participant_id))
 
 
 
-##### DEALING WITH MISSING DATA -----
+#get baseline PHQ scores -----
+# requires phq_mixed models.R to be run
 
-# missing data < 10%       =  ignore
-# 11% < missing data < 50% =  impute
-# missing data > 51%       =  remove variable
+#add "date_of_assessment" to phq
+phq_merge <- merge(phq, IDmap[,2:3], by.x=c("p_id"), by.y=c("participant_id"), all = TRUE, incomparables = T)
 
+#create an event_name variable
+baseline_phq<- phq_merge %>% 
+  mutate(event_name = as.double(difftime(survey_date,date_assessment, units = "weeks")))
+baseline_phq$event_name <- round(baseline_phq$event_name, digits = 0)
 
-
-#show how many NAs per variable and make a list of them named "a"
-a <- as.data.frame((sapply(qids, function(x) sum(is.na(x))))/nrow(qids))
-a <- as.data.frame(which(a > .5, arr.ind = TRUE))
-low_data <- a$row     # varaibles with missing data
-
-# names(qids)  #show me the names of all variables
-other_vars <- c(1:24, 45, 56) # columns that are not predictor variables
-
-inc_vars <- qids[,c(-c(low_data), -c(other_vars))] 
-
-## all included variables = 20
-names(inc_vars)
+#create baseline df with only first 2 weeks
+baseline_phq <-  baseline_phq[baseline_phq$event_name < 4, ] %>% 
+  drop_na(p_id)
 
 
+
+
+#BASELINE DATA FOR PARTICIPANTS  --  baseline_phq
+#keep the lowest value per participant
+baseline_phq <- baseline_phq %>% 
+  group_by(p_id) %>% 
+  slice_min(order_by = event_name) %>% 
+  select(p_id, total_phq, date_assessment, event_name)
+
+#merge demographic data with baseline_phq$phq_total
+demo_total <- merge(demographics, baseline_phq, all = TRUE)
+glimpse(demo_total)
+
+
+#### SIGNIFICANCE TESTING ON DEMOGRAPHICS ----
+#IV: phq_total - numeric
+#DV: Age, gender, ethnicity, education, employment
+
+cor.test(demo_total$phq_total, demo_total$Age)
+# r = 0.1214508, t = 0.78346, df = 41, p-value = 0.4379
+
+
+aov <- aov(phq_total ~ employment,
+           data = demo_total)
+summary(aov)
+
+#                  Df Sum Sq Mean Sq F value Pr(>F)
+# gender           2   25.5   12.74     0.8  0.456
+# ethnicity        4   79.7   19.92   1.299  0.288
+# education_level  3   10.9   3.627   0.217  0.884
+# employment       4  138.2   34.56   2.505 0.0582  (trend)
+
+
+# Tukey HSD test:
+post_test <- glht(aov,linfct = mcp(employment = "Tukey"))
+summary(post_test)    #only trend between unemploymnt and paid employment
+#                                            Estimate Std. Error t value Pr(>|t|)  
+# Unemployment - Paid employment == 0        3.5309     1.3439   2.627   0.0768 .
+plot(post_test)
+
+
+sum(is.na(baseline_phq$p_id))
+length(unique(baseline_phq$p_id))
+length(unique(IDmap$participant_id))
+
+
+
+
+
+# Histograms -----
+
+hist(qids_passive$qids_total, breaks = 10,
+     xlim=c(0, 25),
+     ylim = c(0, 200),
+     xlab = "Total QIDS")
+
+hist(wsas$total_wsas, breaks = 15,
+     xlim=c(0, 40),
+     xlab = "Total WSAS")
 
 # CORRELATIONs -------------
 
 #correlation plot
+names(d)
 
+names(speech)
+speech$Task.y[1]
+ 
+cordf <- speech[, 5:33]   # define df
 
-m <- cor(inc_vars, use = "complete.obs",   # first define inc_vars
+m <- cor(cordf, use = "complete.obs",   
          method = "spearman")  
 
-mat <- inc_vars
+mat <- cordf
 # mat : is a matrix of data
 # ... : further arguments to pass to the native R cor.test function
 cor.mtest <- function(mat, ...) {
@@ -145,7 +214,7 @@ cor.mtest <- function(mat, ...) {
   p.mat
 }
 # matrix of the p-value of the correlation
-p.mat <- cor.mtest(inc_vars)
+p.mat <- cor.mtest(cordf)
 head( round( p.mat[, 1:10], digits=4))
 
 # Leave blank on non-significant coefficient
@@ -162,37 +231,42 @@ points<-ogive.freq(h,col="red",frame=FALSE,
 
 
 
-names(qids)
+names(cordf)
+
 
 #loop for correlation coeffs  - 
 
 ### USE inc_vars for variables with sufficient data
-names(inc_vars)
 
-for (i in 25:62) {
-  corr <- cor.test(qids$qids_total, qids[[i]])
-  print(names(qids)[i])
+data <- cordf
+outcome <- cordf$MISSING_RATE_mean_Activity 
+
+
+for (i in 1:39) {
+  corr <- cor.test(cordf$MISSING_RATE_mean_Activity, data[[i]])
+  print(names(data)[i])
   print(corr$estimate)
   print(corr$p.value)
   # print(coef(summary(fit)))
   # print(summary(fit)$coefficients[2,"Pr(>|t|)"])
 }
 
+# print(round(confint(fit), digits = 6))
 
 #extract correlations and p values
-r <- cor(qids$qids_total, qids[,names(inc_vars)], use = "complete.obs",
+r <- cor(data$MISSING_RATE_mean_Activity , data[,names(data)], use = "complete.obs",
          method = "spearman")
 r
-p <- sapply(qids[,names(inc_vars)], FUN=function(x, y) cor.test(x, y)$p.value, y=qids$qids_total)
+p <- sapply(data[,names(data)], FUN=function(x, y) cor.test(x, y)$p.value, y=data$MISSING_RATE_mean_Activity )
 p
-ci <- sapply(qids[,names(inc_vars)], FUN=function(x, y) cor.test(x, y)$conf.int, y=qids$qids_total)
+ci <- sapply(data[,names(data)], FUN=function(x, y) cor.test(x, y)$conf.int, y=data$MISSING_RATE_mean_Activity )
 ci
 
 cors <- as.data.frame(rbind(r, p))
-
-qids_corrs <- rbind(corrs, ci)
-qids_corrs <- as.data.frame(t(qids_corrs))
-qids_corrs  <- tibble::rownames_to_column(qids_corrs, "feature")
+t(cors)
+data_corrs <- rbind(cors, ci)
+data_corrs <- as.data.frame(t(data_corrs))
+data_corrs  <- tibble::rownames_to_column(data_corrs, "feature")
 
 sig_cors <- as.data.frame(t(cors)) %>%
   rename(cor_coef = V1) %>%
@@ -202,45 +276,40 @@ sig_cors <- as.data.frame(t(cors)) %>%
 sig_cors[sig_cors$p < 0.05, ] 
 
 
-# one line corr plot - BEST TO DO IN EXCEL
-
-Dat = read.table(text="var1 var2 beta
-total_sleep_time_mean	qids	 -0.22140303
-total_sleep_time_std	qids 	0.17548721
-time_in_bed_mean           qids	 -0.20725952
-time_in_bed_std	         qids 	0.17899769
-light_pct_mean	         qids 	-0.05356106
-light_pct_std	         qids 	0.04302783
-deep_pct_mean	         qids 	0.07160059
-deep_pct_std               qids 	0.08274047
-REM_pct_mean	         qids 	0.04087164
-REM_pct_std	         qids 	0.15931022
-awake_pct_mean	         qids 	0.04363294
-awake_pct_std	         qids 	0.12804331
-sleep_onset_mean	         qids 	0.26594214
-sleep_onset_std	         qids 	0.160348
-sleep_offset_mean	          qids 	0.12744487
-sleep_offset_std	          qids 	0.13015166
-sleep_efficiency_mean	 qids 	-0.04363294
-sleep_efficiency_std	 qids 	0.12804331
-awakenings_mean	          qids 	-0.099975
-awakenings_std	          qids 	0.07777389",
-                 header=TRUE)
-
-
-
-## Now reshape the data  (same as before)
-wide = reshape(Dat[,1:3], idvar = c("var1"),
-               timevar="var2", direction = "wide")
-rownames(wide) = wide$var1
-wide = wide[,-1]
-colnames(wide) = sub("beta.", "", colnames(wide))
-
-
 ## Pass it to corrplot
 library(corrplot)
-corrplot(as.matrix(wide), is.corr=FALSE, tl.srt=0)
+corrplot(as.matrix(cors), is.corr=FALSE, tl.srt=0)
 
 
 #plot
-scatter.smooth(x=qids$sleep_onset_mean, y=qids$qids_total, main="plot")  # scatterplot
+scatter.smooth(x=data$sleep_onset_mean, y=data$data_total, main="plot")  # scatterplot
+
+
+# correlation between QIDS an GAD and WSAS -----
+# Run QIDS basic and GAD basic codes:
+
+total_QIDS_GAD <- merge(qids_event, gad, all.x = T, by = c("p_id", "event_name"))
+
+cor.test(total_QIDS_GAD$qids_total, total_QIDS_GAD$total_gad, use = "complete.obs")
+
+# Pearson's product-moment correlation
+# data:  total_QIDS_GAD$qids_total and total_QIDS_GAD$total_gad
+# t = 18.152, df = 452, p-value < 2.2e-16
+
+# 95% CI: 0.5927150  -  0.6995524
+# cor = 0.6493259 
+# r(452) = .649, p < 0.001
+
+total_QIDS_GAD_WSAS <- merge(total_QIDS_GAD, wsas, all.x = T, by = c("p_id", "event_name"))
+
+cor.test(total_QIDS_GAD_WSAS$qids_total, total_QIDS_GAD_WSAS$total_wsas, use = "complete.obs")
+
+# Pearson's product-moment correlation
+# data:  total_QIDS_GAD_WSAS$qids_total and total_QIDS_GAD_WSAS$total_wsas
+# t = 34.445, df = 994, p-value < 2.2e-16
+
+# 95% CI: 0.7079811  -  0.7647341
+# cor =  0.7376578 
+# r(994) = 0.738, p < 0.001
+
+
