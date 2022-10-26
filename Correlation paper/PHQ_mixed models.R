@@ -1,9 +1,26 @@
 ##PHQ 9 analysis
+library(agricolae)
+library(lmerTest)
+library(data.table)
+library(corrplot)
+library(glmnet)
+library(caret)
+library(groupdata2)
+library(readxl)
+library(multcomp)
+library(tidyverse)
+library(lubridate)
+library(naniar)
+
+select <- dplyr::select
 
 
 #load datasets 
 getwd()
 setwd("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/R scripts")
+
+# setwd("C:/Users/valer/Downloads")
+
 
 redcap_full <- read_excel("REDcap full.xlsx")
 IDmap <- read_excel("4. aRMT data.xlsx", sheet = "IDmap")
@@ -12,9 +29,6 @@ IDmap <- read_excel("4. aRMT data.xlsx", sheet = "IDmap")
 options(scipen=999)
 # options(scipen=0) # to revert scientific notation
 
-
-speech <- fread("speech-Scripted-25-09-2022.csv", data.table=F) %>%
-  mutate(date_str = as.Date(date_str, tz = NULL, formats = NULL))
 
 sleep <- fread("daily_sleep_feature.csv", data.table=F) %>%
   dplyr::mutate(date_str = lubridate::ymd(date_str))
@@ -41,13 +55,14 @@ phq_select <- redcap_full %>%
   mutate(total_phq = rowSums(across(phq9_1:phq9_9), na.rm = T)) %>%
   filter(!is.na(phq9_timestamp)) %>%    #select only one row per enrolment event
   # dichotomise phq9 based on clinical cut-off
+  rename(redcap_event = redcap_event_name) %>% 
   mutate(phq_binary = ifelse(total_phq >9, 1, 0))
-#change redcap_event_name with week number
-redcap_event <- phq_select$redcap_event_name  %>%
+#change redcap_event with week number
+redcap_event <- phq_select$redcap_event  %>%
   str_remove_all("_arm_1") %>%
   str_remove_all("week_") %>%
   str_replace("enrolment", "0")
-phq_select$redcap_event_name <- as.numeric(redcap_event)
+phq_select$redcap_event <- as.numeric(redcap_event)
 phq_select$survey_date <- as.Date(phq_select$phq9_timestamp)
 
 #add p_id
@@ -58,9 +73,11 @@ phq <- merge(phq_select, IDmap[, c("participant_id", "record_id")]) %>%
 qids<-phq
 
 
+
+
 win_size <- 7
 
-# sleep -----
+# Sleep -----
 
 # extract second-order features
 sleep_feature <- colnames(sleep)[6:15]
@@ -92,6 +109,7 @@ for (i in 1:nrow(qids)){
   }
 }
 # BT features ----
+
 bt_feature <- colnames(bt)[7:11]
 new_feature =c()
 
@@ -160,249 +178,29 @@ for (i in 1:nrow(qids)){
 }
 
 
+## now come back -----
+phq_prmt<-qids
+
+
 
 ### ### 
-
-
-phq_prmt <- qids
-
-
-## now run second_order_feature_extraction as QIDS, then come back -----
-qids <- phq
-
-setwd("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/data stream files")
-
-# Date ID
-Date_ID_set <- read_excel("HR_210322.xlsx", sheet = "Time Interval ID") %>%
-  rename(DATE_ID = timeInterval_ID) %>%
-  rename(date_str = datetimeStart)
-# read HR feature table
-HR_set <- read_excel("HR_210322.xlsx", sheet = "HR") %>%
-  dplyr::select(SUBJECT_ID, DATE_ID, MISSING_RATE, FEATURE_001, FEATURE_002, FEATURE_003, FEATURE_004, FEATURE_005
-                , FEATURE_006, FEATURE_007, FEATURE_008, FEATURE_009, FEATURE_010, FEATURE_015, FEATURE_016, FEATURE_017
-                , FEATURE_018, FEATURE_019, FEATURE_020)
-# map dateid
-HR_set <- merge(HR_set,Date_ID_set) %>%
-  dplyr::select(-DATE_ID) %>%
-  dplyr::mutate(date_str = lubridate::ymd(date_str))%>%
-  rename(p_id=SUBJECT_ID)
-
-# read Step feature table
-Step_set <- read_excel("STEPS_210322.xlsx", sheet = "Hoja1") %>%
-  dplyr::select(SUBJECT_ID, DATE_ID, MISSING_RATE, FEATURE_001, FEATURE_002, FEATURE_003, FEATURE_004, FEATURE_005
-                , FEATURE_006, FEATURE_007, FEATURE_019, FEATURE_020, FEATURE_022
-                , FEATURE_024, FEATURE_025, FEATURE_026)
-# map date id
-Step_set <- merge(Step_set,Date_ID_set) %>%
-  dplyr::select(-DATE_ID) %>%
-  dplyr::mutate(date_str = lubridate::ymd(date_str))%>%
-  rename(p_id=SUBJECT_ID)
-
-# read Activity feature table
-Activity <- read_excel("ACTIVITY_210322.xlsx", sheet = "Hoja1") %>%
-  dplyr::select(SUBJECT_ID, DATE_ID, MISSING_RATE,FEATURE_001,FEATURE_002,FEATURE_003,FEATURE_004,FEATURE_005
-                ,FEATURE_006,FEATURE_007,FEATURE_008,FEATURE_009,FEATURE_010,FEATURE_011,FEATURE_012,FEATURE_013
-                ,FEATURE_014,FEATURE_015,FEATURE_016,FEATURE_017,FEATURE_018)
-# map date id
-Activity <- merge(Activity, Date_ID_set) %>%
-  dplyr::select(-DATE_ID) %>%
-  dplyr::mutate(date_str = lubridate::ymd(date_str))%>%
-  rename(p_id=SUBJECT_ID)
-
-
-
-# extract second-order features for each qids record
-
-win_size = 7
-# HR
-# extract second-order hr features
-hr_feature <- colnames(HR_set)[2:18]
-second_feature <- c("_mean_hr", "_std_hr")
-new_feature =c()
-for (i in 1:length(hr_feature)){
-  for (j in 1:length(second_feature)){
-    new_feature = append(new_feature,paste(hr_feature[i],second_feature[j],sep = ""))
-  }
-}
-pre_col_num <- ncol(qids)
-qids$hr_day <- NA
-qids[, new_feature] <-NA
-
-for (i in 1:nrow(qids)){
-  print(i)
-  p_id_select <- qids$p_id[i]
-  date_select <- qids$survey_date[i]
-  hr_temp <- HR_set[HR_set$p_id==p_id_select,]
-  hr_temp <- hr_temp[hr_temp$date_str >= date_select - days(win_size) & hr_temp$date_str < date_select,]
-  # threshold for daily hr missing rate
-  hr_temp <- hr_temp[hr_temp$MISSING_RATE < 50,]
-  
-  qids$hr_day[i] <- nrow(hr_temp)
-  if (nrow(hr_temp) >= 2){
-    for (j in 1:length(hr_feature)){
-      # all days
-      qids[i, (j-1) *length(second_feature) + 1 + pre_col_num + 1] = mean(as.numeric(hr_temp[,j+1]), na.rm = TRUE)
-      qids[i, (j-1) *length(second_feature) + 2 + pre_col_num + 1] = sd(as.numeric(hr_temp[,j+1]), na.rm = TRUE)
-    }
-  }
-}
-
-# step features
-step_feature <- colnames(Step_set)[2:15]
-second_feature <- c("_mean_step", "_std_step")
-new_feature =c()
-for (i in 1:length(step_feature)){
-  for (j in 1:length(second_feature)){
-    new_feature = append(new_feature,paste(step_feature[i],second_feature[j],sep = ""))
-  }
-}
-pre_col_num <- ncol(qids)
-qids$step_day <- NA
-qids[, new_feature] <-NA
-
-for (i in 1:nrow(qids)){
-  print(i)
-  p_id_select <- qids$p_id[i]
-  date_select <- qids$survey_date[i]
-  step_temp <- Step_set[Step_set$p_id==p_id_select,]
-  step_temp <- step_temp[step_temp$date_str >= date_select - days(win_size) & step_temp$date_str < date_select,]
-  # threshold for daily hr missing rate
-  step_temp <- step_temp[step_temp$MISSING_RATE < 50,]
-  
-  qids$step_day[i] <- nrow(step_temp)
-  if (nrow(step_temp) >= 2){
-    for (j in 1:length(step_feature)){
-      # all days
-      qids[i, (j-1) *length(second_feature) + 1 + pre_col_num + 1] = mean(as.numeric(step_temp[,j+1]), na.rm = TRUE)
-      qids[i, (j-1) *length(second_feature) + 2 + pre_col_num + 1] = sd(as.numeric(step_temp[,j+1]), na.rm = TRUE)
-    }
-  }
-}
-
-
-# activity features
-activity_feature <- colnames(Activity)[2:20]
-second_feature <- c("_mean_Activity", "_std_Activity")
-new_feature =c()
-for (i in 1:length(activity_feature)){
-  for (j in 1:length(second_feature)){
-    new_feature = append(new_feature,paste(activity_feature[i],second_feature[j],sep = ""))
-  }
-}
-pre_col_num <- ncol(qids)
-qids$activity_day <- NA
-qids[, new_feature] <-NA
-
-for (i in 1:nrow(qids)){
-  print(i)
-  p_id_select <- qids$p_id[i]
-  date_select <- qids$survey_date[i]
-  activity_temp <- Activity[Activity$p_id==p_id_select,]
-  activity_temp <- activity_temp[activity_temp$date_str >= date_select - days(win_size) & activity_temp$date_str < date_select,]
-  # threshold for daily hr missing rate
-  activity_temp <- activity_temp[activity_temp$MISSING_RATE < 50,]
-  
-  qids$activity_day[i] <- nrow(activity_temp)
-  if (nrow(activity_temp) >= 2){
-    for (j in 1:length(activity_feature)){
-      # all days
-      qids[i, (j-1) *length(second_feature) + 1 + pre_col_num + 1] = mean(as.numeric(activity_temp[,j+1]), na.rm = TRUE)
-      qids[i, (j-1) *length(second_feature) + 2 + pre_col_num + 1] = sd(as.numeric(activity_temp[,j+1]), na.rm = TRUE)
-    }
-  }
-}
-
-# back to phq ----
-phq_fb <- qids
-
-glimpse(phq_fb)
-
-
-phq_passive <- merge(phq_fb, phq_prmt)
+##  REMEMBER TO EXCLUDE:     ####
+# f5978923-cef2-4eeb-a49c-7d79be4b53eb
+# 5786af5e-99e3-4f78-848a-d3b67b8eb7ed
+### ###
 
 
 ###### V. important exclusion
-phq_passive <- phq_passive %>% 
+phq_prmt <- phq_prmt %>% 
   filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed")
 
 
-##### exclude variables with MISSING DATA -----
-
-#show how many NAs per variable and make a list of them named "a"
-a <- as.data.frame((sapply(phq_passive, function(x) sum(is.na(x))))/nrow(phq_passive))
-a <- as.data.frame(which(a > .5, arr.ind = TRUE))
-low_data <- a$row
-
-names(phq_passive)  #show me the names of all variables
-
-other_vars <- c(1:19, 54, 83, 122, 143, 154)   # For all phq passive
-
-length(phq_passive)    # 160
-length(other_vars)     # 24
-length(low_data)       # 16
-160-24-16              # 120 predictor variables left 
-
-
-inc_vars <- phq_passive[,c(-c(low_data), -c(other_vars))]
-# inc_vars <- phq_passive[, -c(other_vars)]  # For Fitbit -  HR STEPS and ACTIVITY df
-
-
-### Multilevel Regression models -----
-
-# variables with > 50% available data
-phq_avail <- phq_passive %>%
-  dplyr::select(p_id, total_phq, c(names(inc_vars)))   
-
-phq_avail <- phq_passive[,c(-c(low_data))]
-
-#add QIDS scores as a covariate
-phq_avail <- merge(phq_avail, qids_all[, c(1, 21, 165)]) %>%
-  drop_na(event_name) 
-
-
-#  ### ### ### ###  ###
-### LOAD DESCRIPTIVES.R ####
-#  ### ### ### ###  ###
-
-
-#combine the digital+phq_passive features to demographic variables
-names(demographics)
-names(demographics[c(1, 14,23,24,25,26)])      # demographic variables from script = descriptives.R !!!
-d <-merge(phq_avail, demographics[c(1, 14,23,24,25,26)])
-glimpse(phq_passive)
-
-data = d         #     <- - - - select the data to be used for the models
-names(data)
+phq_temp <- phq_prmt %>%
+  filter(sleep_day >=2) # if there are more than 2 days. filtering for at least 2 days of sleep per week
 
 
 
-## conduct the models adjusting for: Age, gender + depression
-#loop for mixed linear models
-
-for (i in 22:26) {    # change depending on data used
-  fit <-lmer(total_phq                # predicted variable 
-             ~ data[[i]]          
-             + Age + gender + qids_total   #covariates
-             + (1 |p_id),data = data)  # random effects
-  print(toupper(names(data)[i]))
-  print(summary(fit))
-  # print(round(coef(summary(fit)), digits = 6))
-  # print(round(confint(fit), digits = 6))
-}
-
-
-
-
-
-fit <-lmer(total_phq ~ deep_pct_mean +  Age + gender + (1 |p_id), data = data)
-summary(fit)
-confint(fit)
-
-
-18.470/(18.470 + 7.434) # ~ 70% is the variance explained by individual difference
-fit@sigma
-
-### PHQ for other FITBIT DATA #####
+# PHQ for other FITBIT DATA #####
 
 # Date ID
 Date_ID_set <- read_excel("HR_210322.xlsx", sheet = "Time Interval ID") %>%
@@ -444,13 +242,6 @@ Activity <- merge(Activity, Date_ID_set) %>%
 
 
 # extract second-order features for each record
-
-# read phq table
-# phq_select already loaded
-
-#add p_id
-phq <- merge(phq_select, IDmap[, c("participant_id", "record_id")]) %>%
-  rename(p_id = participant_id)
 
 ###change from phq to qids to run code
 qids<-phq
@@ -557,32 +348,136 @@ for (i in 1:nrow(qids)){
 
 
 ### change back ---
-phq <- qids
+phq_fitbit <- qids
 
 
-phq_temp <- phq %>%
-  filter(hr_day >=4)
+phq_temp <- phq_fitbit %>%
+  filter(hr_day >=1)
 
-fit <-lmer(total_phq ~ FEATURE_005_std_step + (1 |p_id), phq)
+fit <-lmer(total_phq ~ FEATURE_005_std_step + (1 |p_id), phq_fitbit)
 summary(fit)
 
 
 ###### V. important exclusion
-phq <- phq %>% 
+phq_fitbit <- phq_fitbit %>% 
   filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed")
 
 phq_temp <- phq_temp %>% 
   filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed")
 
 
+# combine both second_features! -----
+phq_passive <- merge(phq_prmt, phq_fitbit)
+
+
+## exclude variables with MISSING DATA -----
+
+# missing data <= 50%       =  impute
+# missing data > 50%       =  remove variable
+
+
+#show how many NAs per variable and make a list of them named "a"
+a <- as.data.frame((sapply(phq_passive, function(x) sum(is.na(x))))/nrow(phq_passive))
+a <- as.data.frame(which(a > .5, arr.ind = TRUE))
+low_data <- a$row
+glimpse(phq_passive)
+
+
+names(phq_passive)  #show me the names of all variables
+
+other_vars <- c(3, 19, 
+                22:23,  #time in bed
+                40, 51, 58:60, 
+                65:70, 81:86, 89:90, #HR
+                93:95, 
+                98:103, 112:113, 116:121, #steps
+                122:124,
+                133:148, 155:158) #activity   
+
+length(phq_passive)    # 160
+length(other_vars)     # 63
+length(low_data)       # 16
+160-63-16              # 82
+
+
+
+phq_avail <- phq_passive[,c(-c(low_data), -c(other_vars))]
+
+inc_vars <- phq_avail[, -c(1:17)]  # for correlation plot
+
+names(inc_vars)
+
+## Create baseline phq  -----
+#create baseline df with only first 3 weeks
+baseline_phq <-  phq_avail[phq_avail$redcap_event < 4, ] %>% 
+  drop_na(p_id)
+
+write.csv(baseline_phq, "C:/Users/k1754359/Downloads/baseline_phq.csv")
+
+baseline_phq %>% 
+  count(redcap_event, sort = TRUE)
+
+baseline_phq <- baseline_phq %>% 
+  group_by(record_id) %>% 
+  summarise_all(mean, na.rm = TRUE)
+
+test <- baseline_phq %>% replace_with_na_all(condition = ~.x == NaN)
+
+
+# Multilevel Regression models -----
+
+
+#  ### ### ### ###  ###
+### LOAD DESCRIPTIVES.R ####
+#  ### ### ### ###  ###
+
+names(demographics)
+names(demographics[c(1,4:7, 14,23,24,25,26)])      # demographic variables from script = descriptives.R !!!
+
+d <-merge(phq_avail, demographics[c(1,4:7, 14,23,24,25,26)])
+
+# create a variable that tells you if that week is baseline data
+# diff between current date and treatment start date
+
+phq_tx <- d %>% 
+  #create baseline tx variable
+  mutate(baselinediff = as.double(difftime(survey_date, tx_start, units = "days"))) %>%
+  drop_na(tx_start) %>%
+  mutate(baseline = ifelse(baselinediff > -15 & baselinediff < 8, 1, 0)) %>%
+  
+  #create endpoint phq
+  mutate(enddiff = as.double(difftime(survey_date, tx_end, units = "days"))) %>%
+  drop_na(tx_end) %>%
+  mutate(end = ifelse(tx_length > 2 & enddiff > -8 & enddiff < 15, 1, 0)) %>%
+  
+  #create midpoint for tx
+  mutate(half_tx = (as.numeric(tx_length)/2)*7) %>%
+  mutate(mid = ifelse(tx_length > 3 & baselinediff > (half_tx-7) & baselinediff < (half_tx + 7), 1, 0))
+  
+  
+View(phq_tx[c("survey_date", "tx_start", "baseline", "tx_end", "end","baselinediff", "half_tx", "mid")])
+
+  
+#baseline df
+baseline <- d %>% 
+  mutate(baselinediff = as.double(difftime(survey_date, tx_start, units = "days"))) %>%
+  drop_na(tx_start) %>%
+  filter(baselinediff > -8 & baselinediff < 15)
+
+
+#combine the digital+phq features to demographic variables
+
+
+# Mixed level models -----
+
+
+
 ### ### ### ###  ###
 ##  phq by items ####
 ### ### ### ###  ###
 
-inc_vars <- phq[,-c(low_data)] #exclude variables with low data
-inc_vars <- phq #no need for this in fitbit features
 
-###change to PHQ ## ## ## 
+### rename PHQ items ####
 
 item_phq <- left_join(demo_total, inc_vars, by = "p_id") %>%
   mutate(sleep = pmax(q1, q2, q3, q4)) %>%
@@ -598,21 +493,7 @@ item_phq <- left_join(demo_total, inc_vars, by = "p_id") %>%
   rename(total_phq = total_phq.x)
 
 
-data = item_phq #    <- - - - select the data to be used for the models
-names(item_phq[c(50:69)])
-names(item_phq[c(52:83, 85:112, 114:151)])   # fitbit hr, steps, activity
 
-for (i in c(52:83, 85:112, 114:151)) {    # change depending on data used
-  fit <-lmer(interest                # predicted variable 
-             ~ data[[i]]          
-             + Age + gender    #covariates
-             + (1 |p_id),data = data)  # random effects
-  print(toupper(names(data)[i]))
-  # print(coef(summary(fit)))
-  print(round(summary(fit)$coefficients[2,5], digits = 4)) 
-}
-
-summary(fit)$coefficients[2,5] 
 
 #PLOTS ----
 
