@@ -10,7 +10,8 @@ wsas <- fread("master_wsas.csv", data.table=F) %>%
 
 IDmap <- read_excel("4. aRMT data.xlsx", sheet = "IDmap")
 glimpse(wsas)
-hist(wsas$total_wsas)
+
+
 
 #add p_id
 wsasid <- merge(wsas, IDmap[,2:3], by.x=c("p_id"), by.y=c("participant_id"), all = TRUE, incomparables = T)
@@ -20,13 +21,13 @@ wsas <- wsasid %>%
 wsas$event_name <- round(wsas$event_name, digits = 0)
 
 # mege WSAS with qids
-names(qids_all)[20:21]
-a <- merge(qids_all, IDmap[,2:3], by.x=c("p_id"), by.y=c("participant_id"), all = TRUE, incomparables = T)
-qids_all <- a %>% 
+a <- merge(qids_passive, IDmap[,2:3], by.x=c("p_id"), by.y=c("participant_id"), all = TRUE, incomparables = T)
+qids_passive <- a %>% 
   mutate(event_name = as.double(difftime(survey_date,date_assessment, units = "weeks")))
-qids_all$event_name <- round(qids_all$event_name, digits = 0)
+qids_passive$event_name <- round(qids_passive$event_name, digits = 0)
 
-wsas_dep <- merge(wsas, qids_all[, c(1, 21, 165)]) %>%
+names(qids_passive)[c(1, 21, 165)]
+wsas_dep <- merge(wsas, qids_passive[, c(1, 21, 165)]) %>%
   drop_na(event_name) %>%
   rename(survey_date = date)
 names(wsas_dep)
@@ -35,7 +36,7 @@ names(wsas_dep)
 ##now add the features
 
 qids <-wsas_dep
-
+?hist
 
 
 win_size <- 7
