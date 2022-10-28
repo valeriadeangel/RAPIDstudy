@@ -8,6 +8,7 @@ IDmap <- read_excel("4. aRMT data.xlsx", sheet = "IDmap")
 demographics <- read_excel("2. Demographic Table.xlsx", sheet = "Demographics (R)") %>%
   select(1:27) %>%
   rename(p_id = P_ID) %>%
+   rename(record_id = record_ID) %>%
   rename(date_of_assessment = `Date of assessment`) %>% 
   rename(tx_start = `Treatment start date`) %>%
   rename(tx_end = `Tx end`) %>%
@@ -42,13 +43,14 @@ demographics <- read_excel("2. Demographic Table.xlsx", sheet = "Demographics (R
 demographics$tx_start = convertToDate(demographics$tx_start, origin = "1900-01-01")
 demographics$tx_end = convertToDate(demographics$tx_end, origin = "1900-01-01")
 
-
+names(demographics)
 demo <-demographics[c(1, 14,23,24,25,26)]      # demographic variables from script = descriptives.R !!!
 
 
+## for PHQ analysis: can go back to PHQ_mixed models.R
+
 #get baseline QIDS scores ------- 
 # requires second_order_feature_extraction.R to be run
-
 
 #add "date_of_assessment" to qids
 qids_merge <- merge(qids, IDmap[,2:3], by.x=c("p_id"), by.y=c("participant_id"), all = TRUE, incomparables = T)
