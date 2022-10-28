@@ -28,14 +28,12 @@ redcap_event <- gad_select$redcap_event_name  %>%
   str_remove_all("week_") %>%
   str_replace("enrolment", "0")
 gad_select$redcap_event_name <- as.numeric(redcap_event)
-gad_select %>% rename(event_name = redcap_event_name)
+gad_select <- gad_select %>% rename(event_name = redcap_event_name)
 gad_select$survey_date <- as.Date(gad_select$gad7_timestamp)
 
 
-
 #add p_id
-gad <- merge(gad_select, IDmap[, c("participant_id", "record_id")]) %>%
-  rename(p_id = participant_id)
+gad <- merge(gad_select, IDmap[, c("p_id", "record_id")])
 
 # ADD features to gad (following Yuezhou's code from QIDS)
 qids<-gad
@@ -341,6 +339,10 @@ gad_avail<-gad_avail %>% rename(event_name = redcap_event_name)
 gad_avail <- merge(gad_avail, qids_all[, c(1, 21, 165)], all.x = TRUE) %>%
   drop_na(event_name) %>%
   drop_na(total_gad)
+
+
+total_QIDS_GAD <- merge(qids_event, gad, all.x = T, by = c("p_id", "event_name"))
+
 
 #  ### ### ### ###  ###
 ### LOAD DESCRIPTIVES.R ####

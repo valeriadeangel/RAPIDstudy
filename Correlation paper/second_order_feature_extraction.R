@@ -9,21 +9,24 @@ library(multcomp)
 library(agricolae)
 library(tidyverse)
 library(lubridate)
+
 library(pacman)
 
 
 select <- dplyr::select
 
 options(scipen=999)
-# options(scipen=0) # to revert scientific notation
+options(scipen=0) # to revert scientific notation
 
 
 getwd()
 #load from IoP:
 setwd("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/R scripts") 
 
+
+
 #load from home:
-setwd("C:/Users/k1754359/Downloads")
+setwd("C:/Users/valer/Downloads")
 
 
 qids <- fread("QIDS_summarized_updated.csv", data.table=F) %>%
@@ -146,7 +149,7 @@ for (i in 1:nrow(qids)){
 
 
 qids_temp <- qids %>%
-  filter(sleep_day >=2) # if there are more than 2 days. filtering for at least 2 days of sleep per week
+  filter(sleep_day >=3) # if there are more than 2 days. filtering for at least 2 days of sleep per week
 
 qids_prmt <- qids
 
@@ -158,7 +161,6 @@ qids_prmt <- qids_prmt %>%
 ### FITBIT FEATURES ----
 # Extract HR, Steps, and Activity data 
 
-setwd("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/data stream files")
 # Date ID
 Date_ID_set <- read_excel("HR_210322.xlsx", sheet = "Time Interval ID") %>%
   rename(DATE_ID = timeInterval_ID) %>%
@@ -303,7 +305,7 @@ for (i in 1:nrow(qids)){
 
 
 qids_temp <- qids %>%
-  filter(hr_day >=4)
+  filter(hr_day >=3)
 
 fit <-lmer(qids_total ~ FEATURE_005_std_step + (1 |p_id), qids)
 summary(fit)
@@ -316,10 +318,11 @@ qids_fb <- qids_fb %>%
   filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed")
 
 
-
 #### combine both second_features! -----
 qids_passive <- merge(qids_prmt, qids_fb)
 
+
+names(qids_prmt)
 
 ### ### 
 #  REMEMBER TO EXCLUDE:     ####
@@ -343,20 +346,6 @@ a <- as.data.frame((sapply(qids_passive, function(x) sum(is.na(x))))/nrow(qids_p
 a <- as.data.frame(which(a > .5, arr.ind = TRUE))
 low_data <- a$row
 
-names(qids_passive)  #show me the names of all variables
-
-other_vars <- c(1:22, 43, 54, 61, 96, 125) # columns that are not predictor variables
-
-length(qids_passive)   # 163
-length(other_vars)     # 27
-length(low_data)       # 16
-163-27-16              # 120 predictor variables left 
-
-inc_vars <- qids_passive[,c(-c(low_data), -c(other_vars))]
-
-# variables with > 50% available data
-qids_avail <- qids_passive[,-c(low_data)]
-
 ### Multilevel Regression models -----
 
 
@@ -367,7 +356,8 @@ qids_avail <- qids_passive[,-c(low_data)]
 
 #combine the digital+qids features to demographic variables
 demo <-demographics[c(1, 14,23,24,25,26)]      # demographic variables from script = descriptives.R !!!
-
+# variables with > 50% available data
+qids_avail <- qids_passive[,-c(low_data)]
 
 d <-merge(qids_avail, demo)
 names(d)
