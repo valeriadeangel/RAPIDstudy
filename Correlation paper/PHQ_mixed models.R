@@ -20,11 +20,10 @@ getwd()
 setwd("C:/Users/k1754359/OneDrive - King's College London/PhD/6. Correlation Digital signals in Depression/R scripts")
 
 # setwd("C:/Users/valer/Downloads")
-
+download <- "write.csv(, C:/Users/k1754359/Downloads/.csv)"
 
 redcap_full <- read_excel("REDcap full.xlsx")
 IDmap <- read_excel("4. aRMT data.xlsx", sheet = "IDmap")
-
 
 options(scipen=999)
 # options(scipen=0) # to revert scientific notation
@@ -402,17 +401,12 @@ length(low_data)       # 16
 
 
 phq_avail <- phq_passive[,c(-c(low_data), -c(other_vars))]
-
 inc_vars <- phq_avail[, -c(1:17)]  # for correlation plot
 
-names(inc_vars)
+## Create baseline phq df with only first 3 weeks -----
 
-## Create baseline phq  -----
-#create baseline df with only first 3 weeks
 baseline_phq <-  phq_avail[phq_avail$redcap_event < 4, ] %>% 
   drop_na(p_id)
-
-write.csv(baseline_phq, "C:/Users/k1754359/Downloads/baseline_phq.csv")
 
 baseline_phq %>% 
   count(redcap_event, sort = TRUE)
@@ -424,20 +418,16 @@ baseline_phq <- baseline_phq %>%
 test <- baseline_phq %>% replace_with_na_all(condition = ~.x == NaN)
 
 
-# Multilevel Regression models -----
-
 
 #  ### ### ### ###  ###
-### LOAD DESCRIPTIVES.R ####
+# LOAD DESCRIPTIVES.R ####
 #  ### ### ### ###  ###
 
-names(demographics)
 names(demographics[c(1,4:7, 14,23,24,25,26)])      # demographic variables from script = descriptives.R !!!
 
+# create variables:
+## baseline data + mid-point data + endpoint data ----
 d <-merge(phq_avail, demographics[c(1,4:7, 14,23,24,25,26)])
-
-# create a variable that tells you if that week is baseline data
-# diff between current date and treatment start date
 
 phq_tx <- d %>% 
   #create baseline tx variable
@@ -455,20 +445,161 @@ phq_tx <- d %>%
   mutate(mid = ifelse(tx_length > 3 & baselinediff > (half_tx-7) & baselinediff < (half_tx + 7), 1, 0))
   
   
-View(phq_tx[c("survey_date", "tx_start", "baseline", "tx_end", "end","baselinediff", "half_tx", "mid")])
+# View(phq_tx[c("survey_date", "tx_start", "baseline", 
+#               "tx_end", "end","baselinediff", "half_tx", "mid")])
 
+test <- replace_with_na_all(phq_tx, condition = ~.x == "NaN")
+
+
+
+# #  # #  # #  # #  # #   
+## RUN speech analysis.R ##
+# #  # #  # #  # #  # #  
+
+# speech_u
+# speech_s
+
+#if merged both speech tasks:
+speech <- merge(speech_u, speech_s, by = c("p_id","date_str", "event_name", "date_assessment" ), all = TRUE)
+speech <- merge(speech_s, IDmap, all = TRUE)
+speech <- speech %>% 
+  filter(p_id != "f5978923-cef2-4eeb-a49c-7d79be4b53eb", p_id != "5786af5e-99e3-4f78-848a-d3b67b8eb7ed") |>
+  rename(redcap_event = event_name)
+
+# Speech features PHQ ---- 
+#merge speech and phq
+m_speech_s <- merge(phq, speech, by = c("record_id", "redcap_event"), all.x = T)
+m_speech_u <- merge(phq, speech, by = c("record_id", "redcap_event"), all.x = T)
+
+
+
+# Calculate change in values -----
+
+changedf <- phq_tx[,c(2:13, 15, 18:81)]
+rows <- nrow(changedf)
+diff_frame <- changedf[-1,] - changedf[-rows,]   
+# difference calculated if BOTH the current and previous weeks are available. So much missing data.
+
+
+
+#need to separate because they have different NA value amounts
+#Sleep
+sleep <- phq_tx[,c(2,4:15,17,18:35)]
+#HR
+hr <- phq_tx[,c(2,4:15,17,36:53)]
+#step
+step <- phq_tx[,c(2,4:15,17,54:65)]
+#activity
+activity <- phq_tx[,c(2,4:15,17,66:81)]
+#scripted speech
+scripted_s <- m_speech_s[,c(1,4:17, 23:50)]
+#unscripted speech
+unscripted_s <- m_speech_u[,c(1,4:17, 23:50)]
+
+df = sleep        # <----------   CHANGE here depending on feature
+
+## create df with change in variables for df
+df <- df %>% 
+  # drop_na(23) %>%       # <----------   CHANGE here if speech(23) vs fitbit
+  group_by(record_id) %>% 
+  arrange(survey_date, .by_group = TRUE)
+rows <- nrow(df)
+b <- df[-1,]
+c <- df[-rows,]
+change_df <- b-c
+
+#extract survey_date from dataframe without the first p_id rows
+date <- df[, c("record_id", "survey_date")]
+
+# now we need to add p_id again
+d <- change_df %>% 
+  rename(id_change = record_id) |>
+  rename(date_change = survey_date) |>
+  bind_cols(date[-1,]) |>
+  subset(id_change != 1) |>
+  merge(demographics[,c("record_id","Age", "gender")], by.x="record_id")
+
+
+
+# change in depression but not in features = t
+# change df - the phq items
+phq_change <- change_df[,1:14]
+phq_change<- rename(phq_change, id_change = record_id)
+#normal df features
+names(df)
+unchanged_df <- df[-1, c(1,15:32)]  # <---------- CHANGE here depending on feature
+
+
+t<-phq_change |>
+  cbind(unchanged_df) |>
+  subset(id_change != 1) |>
+  merge(demographics[,c("record_id","Age", "gender")], by.x="record_id")
+#
+
+
+
+# Linear mixed models -----
+
+
+data = d         #     <- - - - select the data to be used for the models
+names(data)
+
+## conduct the models adjusting for Age, gender.
+
+for (i in 16:33) {        # <---------- change depending on df used : HR = sleep
+  fit <-lmer(total_phq               
+             ~ data[[i]]          
+             + Age + gender  
+             + (1 |record_id),data = data) 
+  print(toupper(names(data)[i]))
+  # print(summary(fit))
+  print(round(coef(summary(fit)), digits = 6))
+  # print(round(confint(fit), digits = 6))
+}
+
+fit <-lmer(total_phq ~ total_sleep_time_mean +  Age + gender + (1 |record_id), data = data)
+summary(fit)
+confint(fit)
+
+
+## export results ----
+
+names(data)
+data = t         #     <- - - - select the data to be used for the models
+
+FEATURE <- c()
+Estimate <- c()
+StdError <- c()
+df <- c()
+t_value <- c()
+pr_t <- c()
+two_five<- c()
+nine_five <- c()
+pacman::p_load(progress)
+## Basic
+pb <- progress_bar$new(total=18)
+for (i in 16:33) {    # <---------- CHANGE here depending on feature
+  pb$tick()
+  fit <-lmer(total_phq
+             ~ data[[i]]
+             + Age + gender
+             + (1 |record_id),data = data)
   
-#baseline df
-baseline <- d %>% 
-  mutate(baselinediff = as.double(difftime(survey_date, tx_start, units = "days"))) %>%
-  drop_na(tx_start) %>%
-  filter(baselinediff > -8 & baselinediff < 15)
-
-
-#combine the digital+phq features to demographic variables
-
-
-# Mixed level models -----
+  FEATURE <- append(FEATURE,toupper(names(data)[i]))
+  Estimate <- append(Estimate,round(coef(summary(fit)), digits = 6)[2,1])
+  StdError <- append(StdError,round(coef(summary(fit)), digits = 6)[2,2])
+  df <- append(df,round(coef(summary(fit)), digits = 6)[2,3])
+  t_value <- append(t_value,round(coef(summary(fit)), digits = 6)[2,4])
+  pr_t <- append(pr_t,round(coef(summary(fit)), digits = 6)[2,5])
+  two_five <- append(two_five,round(confint(fit), digits = 6)[4,1])
+  nine_five <- append(nine_five,round(confint(fit), digits = 6)[4,2])
+  Sys.sleep(0.1)
+  
+}
+#d = change in both, t = change in PHQ only
+sleept_NA= data.frame(FEATURE,Estimate,StdError,df,t_value,pr_t,two_five,nine_five)
+colnames(sleept_NA) <- c("FEATURE","Estimate","Std. eror","df","t value","Pr(>|t|)","2.5 CI","97.5 CI")
+write.csv(sleept_NA,"C:/Users/k1754359/Downloads/sleept_NA.csv",row.names = FALSE)
 
 
 
@@ -477,7 +608,7 @@ baseline <- d %>%
 ### ### ### ###  ###
 
 
-### rename PHQ items ####
+## rename PHQ items ####
 
 item_phq <- left_join(demo_total, inc_vars, by = "p_id") %>%
   mutate(sleep = pmax(q1, q2, q3, q4)) %>%
