@@ -17,17 +17,17 @@ d1=data.frame(d1)
 d2=data.frame(d2)
 edges=rbind(d1, d2)
 
-# create a vertices data.frame. One line per object of our hierarchy
+# create a vertices data frame. One line per object of our hierarchy
 vertices = data.frame(
   name = unique(c(as.character(edges$from), as.character(edges$to))) , 
   value = d3
   #value = runif(33)
 ) 
-# Let's add a column with the group of each name. It will be useful later to color points
+# add a column with the group of each name. 
 vertices$group = edges$from[ match( vertices$name, edges$to ) ]
 
 
-#Let's add information concerning the label we are going to add: angle, horizontal adjustement and potential flip
+#add information concerning the label we are going to add: angle, horizontal adjustement and potential flip
 #calculate the ANGLE of the labels
 vertices$id=NA
 myleaves=which(is.na( match(vertices$name, edges$from) ))
