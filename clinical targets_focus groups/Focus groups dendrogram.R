@@ -8,6 +8,7 @@ library(viridis)
 library(igraph)
 library(readxl)
 
+# This will change depending on where you store your data files
 d2 <- read_excel("C:/Users/valer/Desktop/focus groups .xlsx", 1)
 d1 <- read_excel("C:/Users/valer/Desktop/focus groups .xlsx", 2)
 d3 <- read_excel("C:/Users/valer/Desktop/focus groups .xlsx", 3)
